@@ -1,0 +1,5 @@
+# Optional production-quality embedding and vector-search stack.
+# The application uses a lightweight JSON/hash fallback when these are absent.
+sentence-transformers==3.0.1
+transformers==4.44.2
+chromadb==0.5.5

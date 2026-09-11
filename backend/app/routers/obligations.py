@@ -1,0 +1,19 @@
+from fastapi import APIRouter, HTTPException, Query
+
+from app.models.schemas import ObligationsResponse
+from app.services.obligations import extract_obligations
+from app.services.llm_client import LLMError
+
+router = APIRouter(prefix="/api/contracts", tags=["obligations"])
+
+
+@router.get("/{contract_id}/obligations", response_model=ObligationsResponse)
+async def get_obligations(
+    contract_id: str,
+    force: bool = Query(False, description="Re-run extraction instead of using cached results"),
+) -> ObligationsResponse:
+    try:
+        result = extract_obligations(contract_id, force=force)
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return ObligationsResponse(**result)
