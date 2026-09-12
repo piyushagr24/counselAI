@@ -1,5 +1,7 @@
 """Text extraction for uploaded contracts. No AI here — pure parsing."""
 import math
+import zipfile
+import xml.etree.ElementTree as ET
 import pymupdf
 import docx
 from docx.text.paragraph import Paragraph
@@ -94,6 +96,42 @@ def _format_table_as_markdown(table: Table) -> str:
     return "\n".join(rows_text)
 
 
+def _estimate_docx_pages(path: str, word_count: int) -> int:
+    """Extract page count from DOCX extended properties or estimate from word count/page breaks."""
+    pages_from_props = None
+    explicit_breaks = 0
+    try:
+        with zipfile.ZipFile(path) as z:
+            if "docProps/app.xml" in z.namelist():
+                app_xml = z.read("docProps/app.xml")
+                root = ET.fromstring(app_xml)
+                pages_el = root.find("{http://schemas.openxmlformats.org/officeDocument/2006/extended-properties}Pages")
+                if pages_el is not None and pages_el.text:
+                    try:
+                        p = int(pages_el.text.strip())
+                        if p > 0:
+                            pages_from_props = p
+                    except ValueError:
+                        pass
+
+            if "word/document.xml" in z.namelist():
+                doc_xml = z.read("word/document.xml").decode("utf-8", errors="ignore")
+                explicit_breaks = doc_xml.count('w:type="page"') + doc_xml.count("w:lastRenderedPageBreak")
+    except Exception:
+        pass
+
+    # Typical commercial/legal contracts average ~350-450 words per printed page
+    est_from_words = max(1, math.ceil(word_count / 400)) if word_count > 0 else 1
+
+    if explicit_breaks > 0:
+        return max(explicit_breaks + 1, pages_from_props or 1, est_from_words)
+
+    if pages_from_props is not None and pages_from_props > 1:
+        return max(pages_from_props, est_from_words)
+
+    return est_from_words
+
+
 def extract_docx(path: str) -> dict:
     try:
         document = docx.Document(path)
@@ -147,15 +185,19 @@ def extract_docx(path: str) -> dict:
         segments.append({"index": idx, "page_number": None, "heading": pending_heading, "text": pending_heading_text or ""})
         full_text_parts.append(pending_heading_text or "")
 
-    metadata = {
-        "source_type": "docx",
-        "num_pages": None,
-        "table_count": table_count,
-    }
     full_text = "\n\n".join(full_text_parts).strip()
 
     if not full_text:
         raise HTTPException(status_code=422, detail="No extractable text found in DOCX.")
+
+    words = full_text.split()
+    num_pages = _estimate_docx_pages(path, len(words))
+
+    metadata = {
+        "source_type": "docx",
+        "num_pages": num_pages,
+        "table_count": table_count,
+    }
 
     return _finalize(full_text, segments, metadata)
 

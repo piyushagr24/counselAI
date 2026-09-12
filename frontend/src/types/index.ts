@@ -160,6 +160,35 @@ export interface ContractMetadata {
   has_clauses?: boolean;
 }
 
+export interface DashboardRiskItem {
+  contract_id: string;
+  contract_filename: string;
+  title: string;
+  severity: RiskSeverity;
+  explanation: string;
+  section?: string | null;
+  page_number?: number | null;
+}
+
+export interface DashboardDeadlineItem {
+  contract_id: string;
+  contract_filename: string;
+  description: string;
+  date_or_timeframe?: string | null;
+  category?: string | null;
+  page_number?: number | null;
+}
+
+export interface DashboardObligationItem {
+  contract_id: string;
+  contract_filename: string;
+  responsible_party?: string | null;
+  obligation: string;
+  deadline?: string | null;
+  priority?: "High" | "Medium" | "Standard" | string | null;
+  page_number?: number | null;
+}
+
 export interface DashboardStats {
   total_contracts: number;
   total_pages: number;
@@ -167,6 +196,12 @@ export interface DashboardStats {
   high_risk_count: number;
   total_obligations: number;
   total_deadlines: number;
+  critical_risk_count?: number;
+  medium_risk_count?: number;
+  low_risk_count?: number;
+  recent_risks?: DashboardRiskItem[];
+  upcoming_deadlines?: DashboardDeadlineItem[];
+  recent_obligations?: DashboardObligationItem[];
 }
 
 export interface ContractDetails extends ContractMetadata {

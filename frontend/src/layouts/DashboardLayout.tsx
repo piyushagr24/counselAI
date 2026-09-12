@@ -241,7 +241,7 @@ export default function DashboardLayout() {
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-xs font-medium text-ink-900">{contract.filename}</p>
                             <p className="text-[10px] text-slate-400">
-                              {contract.num_pages ?? "—"} pages · {new Date(contract.upload_date).toLocaleDateString()}
+                              {contract.num_pages ?? 1} {contract.num_pages === 1 ? "page" : "pages"} · {new Date(contract.upload_date).toLocaleDateString()}
                             </p>
                           </div>
                         </button>

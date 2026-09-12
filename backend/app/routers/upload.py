@@ -1,11 +1,20 @@
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 
 from app.core.config import settings
-from app.models.schemas import ContractDetails, ContractMetadata, UploadResponse, DashboardStatsResponse
+from app.models.schemas import (
+    ContractDetails,
+    ContractMetadata,
+    UploadResponse,
+    DashboardStatsResponse,
+    DashboardRiskItem,
+    DashboardDeadlineItem,
+    DashboardObligationItem,
+)
 from app.services.contract_ingestion import ingest_contract
 from app.services.vector_store import delete_chunks
 
@@ -65,6 +74,21 @@ def _read_contract(contract_id: str) -> ContractDetails:
     has_clauses = (parent_dir / f"{contract_id}_clauses.json").is_file()
 
     metadata = extraction.get("metadata", {})
+    num_pages = metadata.get("num_pages")
+    if not num_pages or num_pages <= 0:
+        word_count = metadata.get("word_count", 0)
+        if not word_count:
+            words = extraction.get("full_text", "").split()
+            word_count = len(words)
+            metadata["word_count"] = word_count
+        num_pages = max(1, math.ceil(word_count / 400)) if word_count > 0 else max(1, len(extraction.get("segments", [])))
+        metadata["num_pages"] = num_pages
+        try:
+            with extraction_path.open("w", encoding="utf-8") as file:
+                json.dump(extraction, file, indent=2)
+        except Exception:
+            pass
+
     contract_metadata = ContractMetadata(
         contract_id=contract_id,
         filename=extraction.get("original_filename", source_path.name),
@@ -73,7 +97,7 @@ def _read_contract(contract_id: str) -> ContractDetails:
             "upload_date",
             datetime.fromtimestamp(source_path.stat().st_mtime, tz=timezone.utc).isoformat(),
         ),
-        num_pages=metadata.get("num_pages"),
+        num_pages=num_pages,
         num_segments=metadata.get("num_segments", len(extraction.get("segments", []))),
         risk_count=risk_count,
         high_risk_count=high_risk_count,
@@ -96,45 +120,184 @@ async def get_dashboard_stats() -> DashboardStatsResponse:
         )
 
     contracts = await list_contracts()
+    contract_filenames = {c.contract_id: c.filename for c in contracts}
     total_pages = sum(c.num_pages or 1 for c in contracts)
-    total_risks = sum(c.risk_count for c in contracts)
-    high_risks = sum(c.high_risk_count for c in contracts)
 
-    # Aggregate obligations and deadlines from cached files
+    total_risks = 0
+    critical_risk_count = 0
+    high_risk_count = 0
+    medium_risk_count = 0
+    low_risk_count = 0
+    all_risks: list[DashboardRiskItem] = []
+
+    for rf_file in upload_dir.glob("*_risks.json"):
+        cid = rf_file.name.replace("_risks.json", "")
+        cname = contract_filenames.get(cid, "Contract")
+        try:
+            with rf_file.open("r", encoding="utf-8") as rf:
+                rdata = json.load(rf)
+                for r in rdata.get("risks", []):
+                    total_risks += 1
+                    sev = r.get("severity", "Medium")
+                    if sev == "Critical":
+                        critical_risk_count += 1
+                    elif sev == "High":
+                        high_risk_count += 1
+                    elif sev == "Medium":
+                        medium_risk_count += 1
+                    elif sev == "Low":
+                        low_risk_count += 1
+
+                    all_risks.append(
+                        DashboardRiskItem(
+                            contract_id=cid,
+                            contract_filename=cname,
+                            title=r.get("title", "Untitled Risk"),
+                            severity=sev if sev in ("Low", "Medium", "High", "Critical") else "Medium",
+                            explanation=r.get("explanation", ""),
+                            section=r.get("section"),
+                            page_number=r.get("page_number"),
+                        )
+                    )
+        except Exception:
+            continue
+
+    sev_rank = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+    all_risks.sort(key=lambda x: sev_rank.get(x.severity, 4))
+    recent_risks = all_risks[:15]
+
     total_obligations = 0
-    total_deadlines = 0
+    all_obligations: list[DashboardObligationItem] = []
     for ob_file in upload_dir.glob("*_obligations.json"):
+        cid = ob_file.name.replace("_obligations.json", "")
+        cname = contract_filenames.get(cid, "Contract")
         try:
             with ob_file.open("r", encoding="utf-8") as f:
                 data = json.load(f)
-                total_obligations += len(data.get("obligations", []))
+                for item in data.get("obligations", []):
+                    total_obligations += 1
+                    all_obligations.append(
+                        DashboardObligationItem(
+                            contract_id=cid,
+                            contract_filename=cname,
+                            responsible_party=item.get("responsible_party"),
+                            obligation=item.get("obligation", ""),
+                            deadline=item.get("deadline"),
+                            priority=item.get("priority"),
+                            page_number=item.get("page_number"),
+                        )
+                    )
         except Exception:
             continue
 
+    total_deadlines = 0
+    all_deadlines: list[DashboardDeadlineItem] = []
     for dl_file in upload_dir.glob("*_deadlines.json"):
+        cid = dl_file.name.replace("_deadlines.json", "")
+        cname = contract_filenames.get(cid, "Contract")
         try:
             with dl_file.open("r", encoding="utf-8") as f:
                 data = json.load(f).get("deadlines", {})
-                dates = (
-                    len(data.get("payment_deadlines", []))
-                    + len(data.get("delivery_deadlines", []))
-                    + len(data.get("other_dates", []))
-                )
                 if data.get("contract_start_date"):
-                    dates += 1
+                    total_deadlines += 1
+                    all_deadlines.append(
+                        DashboardDeadlineItem(
+                            contract_id=cid,
+                            contract_filename=cname,
+                            description="Effective / Start Date",
+                            date_or_timeframe=data.get("contract_start_date"),
+                            category="Start",
+                        )
+                    )
                 if data.get("contract_end_date"):
-                    dates += 1
-                total_deadlines += dates
+                    total_deadlines += 1
+                    all_deadlines.append(
+                        DashboardDeadlineItem(
+                            contract_id=cid,
+                            contract_filename=cname,
+                            description="Expiration / End Date",
+                            date_or_timeframe=data.get("contract_end_date"),
+                            category="Expiration",
+                        )
+                    )
+                if data.get("renewal_date"):
+                    total_deadlines += 1
+                    all_deadlines.append(
+                        DashboardDeadlineItem(
+                            contract_id=cid,
+                            contract_filename=cname,
+                            description="Renewal Notice Window",
+                            date_or_timeframe=data.get("renewal_date"),
+                            category="Renewal",
+                        )
+                    )
+                if data.get("termination_notice_period"):
+                    total_deadlines += 1
+                    all_deadlines.append(
+                        DashboardDeadlineItem(
+                            contract_id=cid,
+                            contract_filename=cname,
+                            description="Termination Notice Period",
+                            date_or_timeframe=data.get("termination_notice_period"),
+                            category="Notice",
+                        )
+                    )
+                for p in data.get("payment_deadlines", []):
+                    total_deadlines += 1
+                    all_deadlines.append(
+                        DashboardDeadlineItem(
+                            contract_id=cid,
+                            contract_filename=cname,
+                            description=p.get("description", "Payment Deadline"),
+                            date_or_timeframe=p.get("date_or_timeframe"),
+                            category="Payment",
+                            page_number=p.get("page_number"),
+                        )
+                    )
+                for d in data.get("delivery_deadlines", []):
+                    total_deadlines += 1
+                    all_deadlines.append(
+                        DashboardDeadlineItem(
+                            contract_id=cid,
+                            contract_filename=cname,
+                            description=d.get("description", "Delivery Milestone"),
+                            date_or_timeframe=d.get("date_or_timeframe"),
+                            category="Delivery",
+                            page_number=d.get("page_number"),
+                        )
+                    )
+                for o in data.get("other_dates", []):
+                    total_deadlines += 1
+                    all_deadlines.append(
+                        DashboardDeadlineItem(
+                            contract_id=cid,
+                            contract_filename=cname,
+                            description=o.get("description", "Milestone Date"),
+                            date_or_timeframe=o.get("date_or_timeframe"),
+                            category="Other",
+                            page_number=o.get("page_number"),
+                        )
+                    )
         except Exception:
             continue
+
+    recent_obligations = all_obligations[:12]
+    upcoming_deadlines = all_deadlines[:12]
+    combined_high_risks = critical_risk_count + high_risk_count
 
     return DashboardStatsResponse(
         total_contracts=len(contracts),
         total_pages=total_pages,
         total_risks=total_risks,
-        high_risk_count=high_risks,
+        high_risk_count=combined_high_risks,
         total_obligations=total_obligations,
         total_deadlines=total_deadlines,
+        critical_risk_count=critical_risk_count,
+        medium_risk_count=medium_risk_count,
+        low_risk_count=low_risk_count,
+        recent_risks=recent_risks,
+        upcoming_deadlines=upcoming_deadlines,
+        recent_obligations=recent_obligations,
     )
 
 

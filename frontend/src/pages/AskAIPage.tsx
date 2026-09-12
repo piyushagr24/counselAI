@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Send, ChevronDown, Sparkles, Scale, RotateCcw, BookOpen, FileText } from "lucide-react";
 import ChatMessage from "../components/ChatMessage";
 import DisclaimerBanner from "../components/DisclaimerBanner";
@@ -25,11 +26,15 @@ const CONTRACT_SUGGESTIONS = [
 const GENERAL_ID = "general";
 
 export default function AskAIPage() {
+  const [searchParams] = useSearchParams();
+  const urlQuery = searchParams.get("q");
+  const urlContract = searchParams.get("contract");
+
   const [contracts, setContracts] = useState<ContractMetadata[]>([]);
   const [contractsLoaded, setContractsLoaded] = useState(false);
-  const [selectedContract, setSelectedContract] = useState(GENERAL_ID);
+  const [selectedContract, setSelectedContract] = useState(urlContract || GENERAL_ID);
   const [conversations, setConversations] = useState<Record<string, ChatMessageData[]>>({});
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(urlQuery || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -38,7 +43,9 @@ export default function AskAIPage() {
     void getContracts()
       .then((items) => {
         setContracts(items);
-        if (items.length > 0) {
+        if (urlContract && (urlContract === GENERAL_ID || items.some((i) => i.contract_id === urlContract))) {
+          setSelectedContract(urlContract);
+        } else if (items.length > 0 && !urlContract) {
           setSelectedContract(items[0].contract_id);
         } else {
           setSelectedContract(GENERAL_ID);
@@ -46,7 +53,13 @@ export default function AskAIPage() {
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Unable to load contracts."))
       .finally(() => setContractsLoaded(true));
-  }, []);
+  }, [urlContract]);
+
+  useEffect(() => {
+    if (urlQuery) {
+      setDraft(urlQuery);
+    }
+  }, [urlQuery]);
 
   const messages = conversations[selectedContract] ?? [];
 

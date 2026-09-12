@@ -20,6 +20,8 @@ backend/uploads/*
 !backend/uploads/.gitkeep
 backend/chroma_db/*
 !backend/chroma_db/.gitkeep
+uploads/
+chroma_db/
 
 # frontend
 frontend/node_modules/

@@ -70,6 +70,10 @@ def test_docx_extraction_captures_headings():
     extraction = body["extraction"]
 
     assert extraction["metadata"]["source_type"] == "docx"
+    assert extraction["metadata"]["num_pages"] == 1
+    contract_res = client.get(f"/api/contracts/{body['contract_id']}")
+    assert contract_res.status_code == 200
+    assert contract_res.json()["num_pages"] == 1
     headings = [s["heading"] for s in extraction["segments"] if s["heading"]]
     assert any("Heading" in h for h in headings)
     assert "Payment is due within 15 days" in extraction["full_text"]

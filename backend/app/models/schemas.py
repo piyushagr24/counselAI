@@ -177,6 +177,35 @@ class CompareByIdRequest(BaseModel):
     contract_b_id: str
 
 
+class DashboardRiskItem(BaseModel):
+    contract_id: str
+    contract_filename: str
+    title: str
+    severity: Literal["Low", "Medium", "High", "Critical"]
+    explanation: str
+    section: Optional[str] = None
+    page_number: Optional[int] = None
+
+
+class DashboardDeadlineItem(BaseModel):
+    contract_id: str
+    contract_filename: str
+    description: str
+    date_or_timeframe: Optional[str] = None
+    category: Optional[str] = None
+    page_number: Optional[int] = None
+
+
+class DashboardObligationItem(BaseModel):
+    contract_id: str
+    contract_filename: str
+    responsible_party: Optional[str] = None
+    obligation: str
+    deadline: Optional[str] = None
+    priority: Optional[str] = None
+    page_number: Optional[int] = None
+
+
 class DashboardStatsResponse(BaseModel):
     total_contracts: int
     total_pages: int
@@ -184,6 +213,12 @@ class DashboardStatsResponse(BaseModel):
     high_risk_count: int
     total_obligations: int
     total_deadlines: int
+    critical_risk_count: int = 0
+    medium_risk_count: int = 0
+    low_risk_count: int = 0
+    recent_risks: list[DashboardRiskItem] = []
+    upcoming_deadlines: list[DashboardDeadlineItem] = []
+    recent_obligations: list[DashboardObligationItem] = []
 
 
 class UploadResponse(BaseModel):

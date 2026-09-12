@@ -66,8 +66,9 @@ export default function ContractAnalysisPage() {
   const [deadlines, setDeadlines] = useState<ApiDeadlinesResponse["deadlines"] | null>(null);
   const [messages, setMessages] = useState<ChatMessageData[]>([]);
   const [draft, setDraft] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loadingLabel, setLoadingLabel] = useState<string>("");
+  const [tabLoading, setTabLoading] = useState<Partial<Record<Tab, boolean>>>({});
+  const [tabErrors, setTabErrors] = useState<Partial<Record<Tab, string>>>({});
+  const [chatLoading, setChatLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exportedToast, setExportedToast] = useState(false);
 
@@ -79,6 +80,7 @@ export default function ContractAnalysisPage() {
   const [obligationQuery, setObligationQuery] = useState("");
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const inFlightRef = useRef<Set<Tab>>(new Set());
 
   const isTabCached = (t: Tab, details: ContractDetails | null): boolean => {
     if (!details) return false;
@@ -90,6 +92,11 @@ export default function ContractAnalysisPage() {
     return false;
   };
 
+  const loading = activeTab === "ask" ? chatLoading : !!tabLoading[activeTab];
+  const loadingLabel = isTabCached(activeTab, contract)
+    ? `Loading cached ${activeTab}…`
+    : `Analyzing ${activeTab} with Counsel AI…`;
+
   useEffect(() => {
     if (!id) return;
     void getContract(id)
@@ -97,39 +104,63 @@ export default function ContractAnalysisPage() {
         setContract(data);
         // Pre-fetch cached analysis immediately for the Overview tab without triggering LLM
         if (data.has_summary) {
-          void getSummary(id, false).then(setSummary).catch(() => {});
+          inFlightRef.current.add("summary");
+          setTabLoading((prev) => ({ ...prev, summary: true }));
+          void getSummary(id, false)
+            .then(setSummary)
+            .catch(() => {})
+            .finally(() => {
+              inFlightRef.current.delete("summary");
+              setTabLoading((prev) => ({ ...prev, summary: false }));
+            });
         }
         if (data.has_risks) {
-          void getRisks(id, false).then((res) => {
-            setRisks(
-              res.risks.map((risk, index) => ({
-                id: `${id}-${index}`,
-                title: risk.title,
-                severity: risk.severity,
-                explanation: risk.explanation,
-                evidence: risk.evidence,
-                pageNumber: risk.page_number,
-                section: risk.section,
-                recommendation: risk.recommendation,
-                category: risk.category,
-              }))
-            );
-          }).catch(() => {});
+          inFlightRef.current.add("risks");
+          setTabLoading((prev) => ({ ...prev, risks: true }));
+          void getRisks(id, false)
+            .then((res) => {
+              setRisks(
+                res.risks.map((risk, index) => ({
+                  id: `${id}-${index}`,
+                  title: risk.title,
+                  severity: risk.severity,
+                  explanation: risk.explanation,
+                  evidence: risk.evidence,
+                  pageNumber: risk.page_number,
+                  section: risk.section,
+                  recommendation: risk.recommendation,
+                  category: risk.category,
+                }))
+              );
+            })
+            .catch(() => {})
+            .finally(() => {
+              inFlightRef.current.delete("risks");
+              setTabLoading((prev) => ({ ...prev, risks: false }));
+            });
         }
         if (data.has_obligations) {
-          void getObligations(id, false).then((res) => {
-            setObligations(
-              res.obligations.map((o) => ({
-                responsibleParty: o.responsible_party,
-                obligation: o.obligation,
-                deadline: o.deadline,
-                section: o.section,
-                pageNumber: o.page_number,
-                category: o.category,
-                priority: o.priority,
-              }))
-            );
-          }).catch(() => {});
+          inFlightRef.current.add("obligations");
+          setTabLoading((prev) => ({ ...prev, obligations: true }));
+          void getObligations(id, false)
+            .then((res) => {
+              setObligations(
+                res.obligations.map((o) => ({
+                  responsibleParty: o.responsible_party,
+                  obligation: o.obligation,
+                  deadline: o.deadline,
+                  section: o.section,
+                  pageNumber: o.page_number,
+                  category: o.category,
+                  priority: o.priority,
+                }))
+              );
+            })
+            .catch(() => {})
+            .finally(() => {
+              inFlightRef.current.delete("obligations");
+              setTabLoading((prev) => ({ ...prev, obligations: false }));
+            });
         }
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Unable to load contract."));
@@ -137,15 +168,11 @@ export default function ContractAnalysisPage() {
 
   const loadTabData = async (tab: Tab, force = false) => {
     if (!id || tab === "overview" || tab === "ask") return;
-    setLoading(true);
-    setError(null);
-    if (force) {
-      setLoadingLabel(`Re-analyzing ${tab} with Counsel AI…`);
-    } else if (isTabCached(tab, contract)) {
-      setLoadingLabel(`Loading cached ${tab}…`);
-    } else {
-      setLoadingLabel(`Analyzing ${tab} with Counsel AI…`);
-    }
+    if (inFlightRef.current.has(tab) && !force) return;
+
+    inFlightRef.current.add(tab);
+    setTabLoading((prev) => ({ ...prev, [tab]: true }));
+    setTabErrors((prev) => ({ ...prev, [tab]: undefined }));
 
     try {
       if (tab === "summary") {
@@ -201,27 +228,34 @@ export default function ContractAnalysisPage() {
         setContract((prev) => (prev ? { ...prev, has_deadlines: true } : prev));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load analysis.");
+      setTabErrors((prev) => ({
+        ...prev,
+        [tab]: err instanceof Error ? err.message : "Unable to load analysis.",
+      }));
     } finally {
-      setLoading(false);
+      inFlightRef.current.delete(tab);
+      setTabLoading((prev) => ({ ...prev, [tab]: false }));
     }
   };
 
   useEffect(() => {
+    if (!id || !contract) return;
+    if (activeTab === "overview" || activeTab === "ask") return;
+
     if (
       (activeTab === "summary" && !summary) ||
-      (activeTab === "clauses" && !clauses.length) ||
-      (activeTab === "risks" && !risks.length) ||
-      (activeTab === "obligations" && !obligations.length) ||
+      (activeTab === "clauses" && clauses.length === 0) ||
+      (activeTab === "risks" && risks.length === 0) ||
+      (activeTab === "obligations" && obligations.length === 0) ||
       (activeTab === "deadlines" && !deadlines)
     ) {
       void loadTabData(activeTab, false);
     }
-  }, [activeTab, id]);
+  }, [activeTab, id, contract, summary, clauses.length, risks.length, obligations.length, deadlines]);
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, chatLoading]);
 
   const sendQuestion = async (customText?: string) => {
     const question = (customText || draft).trim();
@@ -233,7 +267,7 @@ export default function ContractAnalysisPage() {
       { id: `${Date.now()}-q`, role: "user", text: question },
     ];
     setMessages(newMessages);
-    setLoading(true);
+    setChatLoading(true);
     setError(null);
 
     try {
@@ -261,7 +295,7 @@ export default function ContractAnalysisPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to answer question.");
     } finally {
-      setLoading(false);
+      setChatLoading(false);
     }
   };
 
@@ -290,7 +324,7 @@ export default function ContractAnalysisPage() {
       `* **Effective Date:** ${s?.effective_date || "Not specified"}`,
       `* **Expiration Date:** ${s?.expiration_date || "Not specified"}`,
       `* **Governing Law:** ${s?.governing_law_and_jurisdiction || "Not specified"}`,
-      `* **Pages Extracted:** ${contract.num_pages ?? "N/A"}`,
+      `* **Pages Extracted:** ${contract.num_pages ?? 1}`,
       `* **Contract ID:** \`${contract.contract_id}\``,
       "",
       "---",
@@ -442,7 +476,7 @@ export default function ContractAnalysisPage() {
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                {contract.num_pages ?? "—"} pages · {(contract.size_bytes / 1024).toFixed(1)} KB · Uploaded {new Date(contract.upload_date).toLocaleDateString()}
+                {contract.num_pages ?? 1} {contract.num_pages === 1 ? "page" : "pages"} · {(contract.size_bytes / 1024).toFixed(1)} KB · Uploaded {new Date(contract.upload_date).toLocaleDateString()}
               </p>
             </div>
           </div>
@@ -471,8 +505,8 @@ export default function ContractAnalysisPage() {
               variant="outline"
               size="sm"
               onClick={() => void loadTabData(activeTab, true)}
-              disabled={loading}
-              leftIcon={<RefreshCw size={13} className={loading ? "animate-spin" : ""} />}
+              disabled={!!tabLoading[activeTab]}
+              leftIcon={<RefreshCw size={13} className={tabLoading[activeTab] ? "animate-spin" : ""} />}
               title="Force re-analyze this section"
             >
               Re-analyze
@@ -521,16 +555,23 @@ export default function ContractAnalysisPage() {
         ))}
       </div>
 
-      {error && (
-        <div className="rounded-xl border border-risk-high/20 bg-risk-high/5 px-4 py-3 text-sm text-risk-high">
-          {error}
+      {(tabErrors[activeTab] || error) && (
+        <div className="rounded-xl border border-risk-high/20 bg-risk-high/5 px-4 py-3 text-sm text-risk-high flex items-center justify-between">
+          <span>{tabErrors[activeTab] || error}</span>
+          <button
+            onClick={() => {
+              setTabErrors((prev) => ({ ...prev, [activeTab]: undefined }));
+              setError(null);
+            }}
+            className="text-xs font-semibold text-risk-high underline hover:no-underline ml-4 shrink-0"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
-      {loading && <LoadingState label={loadingLabel || `Loading ${activeTab}…`} />}
-
       {/* Tab: Overview */}
-      {!loading && activeTab === "overview" && (
+      {activeTab === "overview" && (
         <Overview
           contract={contract}
           summary={summary}
@@ -541,128 +582,233 @@ export default function ContractAnalysisPage() {
       )}
 
       {/* Tab: Summary */}
-      {!loading && activeTab === "summary" && summary && <SummaryView summary={summary} />}
-
-      {/* Tab: Clauses */}
-      {!loading && activeTab === "clauses" && (
-        <div className="space-y-4">
-          {/* Clause Filters Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
-            <div className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 sm:max-w-xs focus-within:border-accent-600 focus-within:bg-white">
-              <Search size={14} className="text-slate-400" />
-              <input
-                type="text"
-                value={clauseQuery}
-                onChange={(e) => setClauseQuery(e.target.value)}
-                placeholder="Filter clauses by keyword…"
-                className="w-full bg-transparent text-xs outline-none placeholder:text-slate-400"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5">
-              {clauseCategories.slice(0, 6).map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setClauseCategory(cat)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                    clauseCategory === cat
-                      ? "bg-ink-900 text-white shadow-xs"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  {cat === "all" ? "All Categories" : cat}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="text-xs text-slate-500 font-medium px-1">
-            Showing {filteredClauses.length} of {clauses.length} clauses
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {filteredClauses.length ? (
-              filteredClauses.map((clause) => <ClauseCard key={clause.chunkIndex} clause={clause} />)
-            ) : (
-              <div className="md:col-span-2">
-                <EmptyState
-                  icon={FileText}
-                  title="No matching clauses"
-                  description="Try adjusting your keyword search or category filter."
-                />
+      {activeTab === "summary" && (
+        summary ? (
+          <div className="space-y-4">
+            {tabLoading.summary && (
+              <div className="flex items-center gap-2 rounded-xl bg-accent-50/80 border border-accent-200 px-4 py-2.5 text-xs text-accent-800">
+                <RefreshCw size={13} className="animate-spin text-accent-600" />
+                <span>Refreshing executive summary with Counsel AI…</span>
               </div>
             )}
+            <SummaryView summary={summary} />
           </div>
-        </div>
+        ) : tabLoading.summary ? (
+          <LoadingState label={isTabCached("summary", contract) ? "Loading cached executive summary…" : "Analyzing contract summary with Counsel AI…"} />
+        ) : (
+          <EmptyState
+            icon={FileText}
+            title="No executive summary generated"
+            description="Click below to analyze and generate an executive summary."
+            action={
+              <Button size="sm" onClick={() => void loadTabData("summary", true)}>
+                Generate Summary
+              </Button>
+            }
+          />
+        )
+      )}
+
+      {/* Tab: Clauses */}
+      {activeTab === "clauses" && (
+        clauses.length > 0 ? (
+          <div className="space-y-4">
+            {tabLoading.clauses && (
+              <div className="flex items-center gap-2 rounded-xl bg-accent-50/80 border border-accent-200 px-4 py-2.5 text-xs text-accent-800">
+                <RefreshCw size={13} className="animate-spin text-accent-600" />
+                <span>Re-extracting clauses…</span>
+              </div>
+            )}
+            {/* Clause Filters Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
+              <div className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 sm:max-w-xs focus-within:border-accent-600 focus-within:bg-white">
+                <Search size={14} className="text-slate-400" />
+                <input
+                  type="text"
+                  value={clauseQuery}
+                  onChange={(e) => setClauseQuery(e.target.value)}
+                  placeholder="Filter clauses by keyword…"
+                  className="w-full bg-transparent text-xs outline-none placeholder:text-slate-400"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {clauseCategories.slice(0, 6).map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setClauseCategory(cat)}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+                      clauseCategory === cat
+                        ? "bg-ink-900 text-white shadow-xs"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {cat === "all" ? "All Categories" : cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="text-xs text-slate-500 font-medium px-1">
+              Showing {filteredClauses.length} of {clauses.length} clauses
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {filteredClauses.length ? (
+                filteredClauses.map((clause) => <ClauseCard key={clause.chunkIndex} clause={clause} />)
+              ) : (
+                <div className="md:col-span-2">
+                  <EmptyState
+                    icon={FileText}
+                    title="No matching clauses"
+                    description="Try adjusting your keyword search or category filter."
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        ) : tabLoading.clauses ? (
+          <LoadingState label={isTabCached("clauses", contract) ? "Loading cached clauses…" : "Extracting and categorizing clauses with Counsel AI…"} />
+        ) : (
+          <EmptyState
+            icon={FileText}
+            title="No clauses extracted"
+            description="Click below to extract and classify contract clauses."
+            action={
+              <Button size="sm" onClick={() => void loadTabData("clauses", true)}>
+                Extract Clauses
+              </Button>
+            }
+          />
+        )
       )}
 
       {/* Tab: Risks */}
-      {!loading && activeTab === "risks" && (
-        <div className="flex flex-col gap-4">
-          {risks.length ? (
-            risks.map((risk) => <RiskCard key={risk.id} risk={risk} />)
-          ) : (
-            <EmptyState
-              icon={ShieldAlert}
-              title="No risks detected"
-              description="No notable risks were returned for this contract."
-            />
-          )}
-        </div>
+      {activeTab === "risks" && (
+        risks.length > 0 ? (
+          <div className="flex flex-col gap-4">
+            {tabLoading.risks && (
+              <div className="flex items-center gap-2 rounded-xl bg-accent-50/80 border border-accent-200 px-4 py-2.5 text-xs text-accent-800">
+                <RefreshCw size={13} className="animate-spin text-accent-600" />
+                <span>Re-analyzing contract risks…</span>
+              </div>
+            )}
+            {risks.map((risk) => <RiskCard key={risk.id} risk={risk} />)}
+          </div>
+        ) : tabLoading.risks ? (
+          <LoadingState label={isTabCached("risks", contract) ? "Loading cached risks…" : "Auditing risks & liabilities with Counsel AI…"} />
+        ) : (
+          <EmptyState
+            icon={ShieldAlert}
+            title="No risks detected"
+            description="No notable risks were returned for this contract."
+            action={
+              <Button size="sm" onClick={() => void loadTabData("risks", true)}>
+                Analyze Risks
+              </Button>
+            }
+          />
+        )
       )}
 
       {/* Tab: Obligations */}
-      {!loading && activeTab === "obligations" && (
-        <div className="space-y-4">
-          {/* Obligation Filter Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
-            <div className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 sm:max-w-xs focus-within:border-accent-600 focus-within:bg-white">
-              <Search size={14} className="text-slate-400" />
-              <input
-                type="text"
-                value={obligationQuery}
-                onChange={(e) => setObligationQuery(e.target.value)}
-                placeholder="Search obligations…"
-                className="w-full bg-transparent text-xs outline-none placeholder:text-slate-400"
-              />
+      {activeTab === "obligations" && (
+        obligations.length > 0 ? (
+          <div className="space-y-4">
+            {tabLoading.obligations && (
+              <div className="flex items-center gap-2 rounded-xl bg-accent-50/80 border border-accent-200 px-4 py-2.5 text-xs text-accent-800">
+                <RefreshCw size={13} className="animate-spin text-accent-600" />
+                <span>Extracting contract obligations…</span>
+              </div>
+            )}
+            {/* Obligation Filter Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
+              <div className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 sm:max-w-xs focus-within:border-accent-600 focus-within:bg-white">
+                <Search size={14} className="text-slate-400" />
+                <input
+                  type="text"
+                  value={obligationQuery}
+                  onChange={(e) => setObligationQuery(e.target.value)}
+                  placeholder="Search obligations…"
+                  className="w-full bg-transparent text-xs outline-none placeholder:text-slate-400"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <select
+                  value={obligationParty}
+                  onChange={(e) => setObligationParty(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none"
+                >
+                  <option value="all">All Parties</option>
+                  {obligationParties.filter((p) => p !== "all").map((party) => (
+                    <option key={party} value={party}>
+                      {party}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={obligationPriority}
+                  onChange={(e) => setObligationPriority(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none"
+                >
+                  <option value="all">All Priorities</option>
+                  <option value="High">High Priority</option>
+                  <option value="Medium">Medium Priority</option>
+                  <option value="Standard">Standard</option>
+                </select>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <select
-                value={obligationParty}
-                onChange={(e) => setObligationParty(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none"
-              >
-                <option value="all">All Parties</option>
-                {obligationParties.filter((p) => p !== "all").map((party) => (
-                  <option key={party} value={party}>
-                    {party}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={obligationPriority}
-                onChange={(e) => setObligationPriority(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none"
-              >
-                <option value="all">All Priorities</option>
-                <option value="High">High Priority</option>
-                <option value="Medium">Medium Priority</option>
-                <option value="Standard">Standard</option>
-              </select>
-            </div>
+            <ObligationsView obligations={filteredObligations} />
           </div>
-
-          <ObligationsView obligations={filteredObligations} />
-        </div>
+        ) : tabLoading.obligations ? (
+          <LoadingState label={isTabCached("obligations", contract) ? "Loading cached obligations…" : "Extracting obligations with Counsel AI…"} />
+        ) : (
+          <EmptyState
+            icon={ListChecks}
+            title="No obligations found"
+            description="No obligations tracked yet for this contract."
+            action={
+              <Button size="sm" onClick={() => void loadTabData("obligations", true)}>
+                Extract Obligations
+              </Button>
+            }
+          />
+        )
       )}
 
       {/* Tab: Deadlines */}
-      {!loading && activeTab === "deadlines" && deadlines && <DeadlinesView deadlines={deadlines} />}
+      {activeTab === "deadlines" && (
+        deadlines ? (
+          <div className="space-y-4">
+            {tabLoading.deadlines && (
+              <div className="flex items-center gap-2 rounded-xl bg-accent-50/80 border border-accent-200 px-4 py-2.5 text-xs text-accent-800">
+                <RefreshCw size={13} className="animate-spin text-accent-600" />
+                <span>Re-extracting deadlines & dates…</span>
+              </div>
+            )}
+            <DeadlinesView deadlines={deadlines} />
+          </div>
+        ) : tabLoading.deadlines ? (
+          <LoadingState label={isTabCached("deadlines", contract) ? "Loading cached deadlines…" : "Extracting deadlines & dates with Counsel AI…"} />
+        ) : (
+          <EmptyState
+            icon={Calendar}
+            title="No deadlines tracked"
+            description="Click below to analyze and extract dates, renewals, and deadlines."
+            action={
+              <Button size="sm" onClick={() => void loadTabData("deadlines", true)}>
+                Extract Deadlines
+              </Button>
+            }
+          />
+        )
+      )}
 
       {/* Tab: Counsel Q&A */}
-      {!loading && activeTab === "ask" && (
+      {activeTab === "ask" && (
         <div className="flex h-[620px] flex-col rounded-2xl border border-slate-200 bg-white shadow-card overflow-hidden">
           <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -701,6 +847,12 @@ export default function ContractAnalysisPage() {
             ) : (
               messages.map((message) => <ChatMessage key={message.id} message={message} />)
             )}
+            {chatLoading && (
+              <div className="flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600 animate-pulse w-fit">
+                <Sparkles size={14} className="animate-spin text-accent-600" />
+                <span>Counsel is reviewing contract text…</span>
+              </div>
+            )}
             <div ref={chatBottomRef} />
           </div>
 
@@ -712,10 +864,11 @@ export default function ContractAnalysisPage() {
                 onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void sendQuestion()}
                 placeholder="Ask about clauses, liabilities, deadlines, or risks…"
                 className="w-full bg-transparent text-sm text-ink-900 outline-none placeholder:text-slate-400"
+                disabled={chatLoading}
               />
               <button
                 onClick={() => void sendQuestion()}
-                disabled={loading || !draft.trim()}
+                disabled={chatLoading || !draft.trim()}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-600 text-white hover:bg-accent-700 disabled:opacity-40 transition-all shadow-xs"
               >
                 <Send size={14} />
@@ -745,10 +898,11 @@ function Overview({
   onLoadSummary: () => void;
 }) {
   const s = summary?.summary;
+  const numPages = contract.num_pages ?? (contract.num_segments ? Math.max(1, Math.ceil(contract.num_segments / 5)) : 1);
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <OverviewCard icon={Users} label="Document Segments" value={`${contract.num_segments} indexed`} />
-      <OverviewCard icon={Clock} label="Document Length" value={`${contract.num_pages ?? "—"} pages`} />
+      <OverviewCard icon={Clock} label="Document Length" value={`${numPages} ${numPages === 1 ? "page" : "pages"}`} />
       <OverviewCard icon={ShieldAlert} label="Risks Flagged" value={`${risks.length || (s?.key_risks_summary?.length ?? "—")} findings`} />
       <OverviewCard icon={ListChecks} label="Obligations" value={`${obligations.length || (s?.key_obligations?.length ?? "—")} tracked`} />
 
