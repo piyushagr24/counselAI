@@ -93,3 +93,35 @@ def test_compare_by_id_and_delete_flow():
     # Verify deleted contract is gone
     get_res = client.get(f"/api/contracts/{id1}")
     assert get_res.status_code == 404
+
+
+def test_truncated_json_array_recovery():
+    from app.utils.json_parsing import extract_list_loose
+
+    raw = (
+        '[\n'
+        '  {"title": "Risk 1", "severity": "High", "explanation": "Exp 1", "evidence": "Ev 1"},\n'
+        '  {"title": "Risk 2", "severity": "Medium", "explanation": "Exp 2", "evidence": "Ev 2"},\n'
+        '  {"title": "Risk 3", "severity": "Low", "explanation": "Cut off mid'
+    )
+    items = extract_list_loose(raw)
+    assert len(items) == 2
+    assert items[0]["title"] == "Risk 1"
+    assert items[1]["title"] == "Risk 2"
+
+
+def test_risk_finding_severity_normalization():
+    from app.models.schemas import RiskFinding
+
+    r_med = RiskFinding(title="T", severity="medium", explanation="E", evidence="Ev")
+    assert r_med.severity == "Medium"
+
+    r_hi = RiskFinding(title="T", severity="HIGH", explanation="E", evidence=None)
+    assert r_hi.severity == "High"
+    assert r_hi.evidence == ""
+
+    r_crit = RiskFinding(title="T", severity="critical severity", explanation="E")
+    assert r_crit.severity == "Critical"
+
+    r_low = RiskFinding(title="T", severity="low", explanation="E")
+    assert r_low.severity == "Low"

@@ -12,6 +12,7 @@ project — MLRiskClassifier is a placeholder for later, and instantiating it
 without a real model raises NotImplementedError rather than pretending to work.
 """
 import json
+import logging
 import os
 import time
 from functools import lru_cache
@@ -19,6 +20,8 @@ from typing import Any, Dict, List
 
 from fastapi import HTTPException
 from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 from app.models.schemas import RiskFinding
@@ -73,7 +76,7 @@ class LLMRiskAnalyzer(RiskAnalyzer):
     method_name = "llm_grounded_analysis"
 
     def analyze_batch(self, labeled_excerpts: str) -> List[Dict[str, Any]]:
-        raw = generate_answer(SYSTEM_PROMPT, labeled_excerpts, max_tokens=1000)
+        raw = generate_answer(SYSTEM_PROMPT, labeled_excerpts, max_tokens=2500)
         return _parse_batch_response(raw)
 
 
@@ -124,10 +127,13 @@ def _parse_batch_response(raw: str) -> List[Dict[str, Any]]:
     data = extract_list_loose(raw)
     items = []
     for entry in data:
+        if not isinstance(entry, dict):
+            continue
         try:
             items.append(RiskFinding(**entry).model_dump())
-        except ValidationError:
-            continue  # skip malformed individual findings
+        except ValidationError as e:
+            logger.warning("Skipping invalid risk finding entry: %s (error: %s)", entry, e)
+            continue
     return items
 
 
@@ -147,8 +153,14 @@ def _deduplicate_risks(risks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def analyze_risks(contract_id: str, force: bool = False) -> Dict[str, Any]:
     cache_path = _cache_path(contract_id)
     if not force and os.path.exists(cache_path):
-        with open(cache_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+                # Serve from cache if findings exist
+                if cached.get("risks"):
+                    return cached
+        except Exception:
+            pass  # Recompute if corrupted or unreadable
 
     extraction = _load_extraction(contract_id)
     units = atomize_segments(extraction["segments"], MAX_UNIT_CHARS)

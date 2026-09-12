@@ -25,11 +25,13 @@ def parse_json_loose(raw: str) -> Any:
 
 
 def extract_list_loose(raw: str) -> list:
-    """Extract a list from LLM output, unwrapping dict wrappers if necessary."""
+    """Extract a list from LLM output, unwrapping dict wrappers if necessary,
+    with automatic recovery for responses truncated by token limits."""
+    data = None
     try:
         data = parse_json_loose(raw)
     except json.JSONDecodeError:
-        return []
+        data = None
 
     if isinstance(data, list):
         return data
@@ -43,6 +45,26 @@ def extract_list_loose(raw: str) -> list:
         for val in data.values():
             if isinstance(val, list):
                 return val
+
+    # Attempt recovery of truncated JSON arrays (e.g. when LLM hits max_tokens)
+    text = raw.strip().replace("```json", "").replace("```JSON", "").replace("```", "").strip()
+    start = text.find("[")
+    if start >= 0:
+        sub = text[start:]
+        last_brace = sub.rfind("}")
+        if last_brace > 0:
+            candidate = sub[:last_brace + 1] + "\n]"
+            try:
+                recovered = json.loads(candidate)
+                if isinstance(recovered, list) and recovered:
+                    return recovered
+            except Exception:
+                try:
+                    recovered = ast.literal_eval(candidate)
+                    if isinstance(recovered, list) and recovered:
+                        return recovered
+                except Exception:
+                    pass
 
     return []
 

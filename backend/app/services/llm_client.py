@@ -273,7 +273,28 @@ def _generate_mock(system_prompt: str, user_prompt: str) -> str:
     if "responsible_party" in prompt and "obligation" in prompt:
         return "[]"
     if '"severity"' in prompt and "evidence" in prompt:
-        return "[]"
+        return json.dumps([
+            {
+                "title": "Uncapped or Broad Indemnification",
+                "severity": "High",
+                "explanation": "Broad indemnification language with asymmetrical liability exposure.",
+                "evidence": "Neither party is liable for indirect, incidental, special, or consequential damages.",
+                "page_number": 1,
+                "section": "Limitation of Liability",
+                "recommendation": "Negotiate mutual indemnification and cap total aggregate liability.",
+                "category": "Legal & Regulatory",
+            },
+            {
+                "title": "Automatic Renewal Terms",
+                "severity": "Medium",
+                "explanation": "Contract automatically renews unless affirmative notice of non-renewal is provided.",
+                "evidence": "The Agreement automatically renews for additional one-year periods unless written notice is provided.",
+                "page_number": 1,
+                "section": "Term and Renewal",
+                "recommendation": "Calendar renewal notice deadlines at least 60 days in advance.",
+                "category": "Termination",
+            },
+        ])
     if '"summary"' in prompt and "highlighted_changes" in prompt:
         return json.dumps({
             "summary": "No material changes were detected by the offline analysis.",

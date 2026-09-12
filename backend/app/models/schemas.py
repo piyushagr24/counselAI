@@ -1,5 +1,5 @@
-from typing import Optional, Literal
-from pydantic import BaseModel
+from typing import Optional, Literal, Any
+from pydantic import BaseModel, field_validator
 
 
 class Segment(BaseModel):
@@ -132,13 +132,38 @@ class DeadlinesResponse(BaseModel):
 
 class RiskFinding(BaseModel):
     title: str
-    severity: Literal["Low", "Medium", "High", "Critical"]
+    severity: Literal["Low", "Medium", "High", "Critical"] = "Medium"
     explanation: str
-    evidence: str
+    evidence: str = ""
     page_number: Optional[int] = None
     section: Optional[str] = None
     recommendation: Optional[str] = None
     category: Optional[str] = None
+
+    @field_validator("severity", mode="before")
+    @classmethod
+    def normalize_severity(cls, v: Any) -> str:
+        if isinstance(v, str):
+            clean = v.strip().capitalize()
+            if clean in {"Low", "Medium", "High", "Critical"}:
+                return clean
+            lower = v.strip().lower()
+            if "crit" in lower:
+                return "Critical"
+            if "high" in lower:
+                return "High"
+            if "med" in lower or "mod" in lower:
+                return "Medium"
+            if "low" in lower:
+                return "Low"
+        return "Medium"
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def normalize_evidence(cls, v: Any) -> str:
+        if v is None:
+            return ""
+        return str(v)
 
 
 class RiskAnalysisResponse(BaseModel):

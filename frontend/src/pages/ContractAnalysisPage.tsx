@@ -68,6 +68,8 @@ export default function ContractAnalysisPage() {
   const [draft, setDraft] = useState("");
   const [tabLoading, setTabLoading] = useState<Partial<Record<Tab, boolean>>>({});
   const [tabErrors, setTabErrors] = useState<Partial<Record<Tab, string>>>({});
+  const [loadedTabs, setLoadedTabs] = useState<Partial<Record<Tab, boolean>>>({});
+  const [forceLoading, setForceLoading] = useState<Partial<Record<Tab, boolean>>>({});
   const [chatLoading, setChatLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exportedToast, setExportedToast] = useState(false);
@@ -92,10 +94,28 @@ export default function ContractAnalysisPage() {
     return false;
   };
 
+  const getLoadingLabel = (t: Tab): string => {
+    if (forceLoading[t]) {
+      if (t === "risks") return "Auditing risks & liabilities with Counsel AI…";
+      if (t === "summary") return "Analyzing contract summary with Counsel AI…";
+      if (t === "clauses") return "Extracting and categorizing clauses with Counsel AI…";
+      if (t === "obligations") return "Extracting contract obligations with Counsel AI…";
+      if (t === "deadlines") return "Extracting deadlines & dates with Counsel AI…";
+      return `Analyzing ${t} with Counsel AI…`;
+    }
+    if (isTabCached(t, contract)) {
+      return `Loading cached ${t}…`;
+    }
+    if (t === "risks") return "Auditing risks & liabilities with Counsel AI…";
+    if (t === "summary") return "Analyzing contract summary with Counsel AI…";
+    if (t === "clauses") return "Extracting and categorizing clauses with Counsel AI…";
+    if (t === "obligations") return "Extracting contract obligations with Counsel AI…";
+    if (t === "deadlines") return "Extracting deadlines & dates with Counsel AI…";
+    return `Analyzing ${t} with Counsel AI…`;
+  };
+
   const loading = activeTab === "ask" ? chatLoading : !!tabLoading[activeTab];
-  const loadingLabel = isTabCached(activeTab, contract)
-    ? `Loading cached ${activeTab}…`
-    : `Analyzing ${activeTab} with Counsel AI…`;
+  const loadingLabel = getLoadingLabel(activeTab);
 
   useEffect(() => {
     if (!id) return;
@@ -107,7 +127,10 @@ export default function ContractAnalysisPage() {
           inFlightRef.current.add("summary");
           setTabLoading((prev) => ({ ...prev, summary: true }));
           void getSummary(id, false)
-            .then(setSummary)
+            .then((res) => {
+              setSummary(res);
+              setLoadedTabs((prev) => ({ ...prev, summary: true }));
+            })
             .catch(() => {})
             .finally(() => {
               inFlightRef.current.delete("summary");
@@ -120,7 +143,7 @@ export default function ContractAnalysisPage() {
           void getRisks(id, false)
             .then((res) => {
               setRisks(
-                res.risks.map((risk, index) => ({
+                (res.risks || []).map((risk, index) => ({
                   id: `${id}-${index}`,
                   title: risk.title,
                   severity: risk.severity,
@@ -132,6 +155,7 @@ export default function ContractAnalysisPage() {
                   category: risk.category,
                 }))
               );
+              setLoadedTabs((prev) => ({ ...prev, risks: true }));
             })
             .catch(() => {})
             .finally(() => {
@@ -145,7 +169,7 @@ export default function ContractAnalysisPage() {
           void getObligations(id, false)
             .then((res) => {
               setObligations(
-                res.obligations.map((o) => ({
+                (res.obligations || []).map((o) => ({
                   responsibleParty: o.responsible_party,
                   obligation: o.obligation,
                   deadline: o.deadline,
@@ -155,6 +179,7 @@ export default function ContractAnalysisPage() {
                   priority: o.priority,
                 }))
               );
+              setLoadedTabs((prev) => ({ ...prev, obligations: true }));
             })
             .catch(() => {})
             .finally(() => {
@@ -172,17 +197,21 @@ export default function ContractAnalysisPage() {
 
     inFlightRef.current.add(tab);
     setTabLoading((prev) => ({ ...prev, [tab]: true }));
+    if (force) {
+      setForceLoading((prev) => ({ ...prev, [tab]: true }));
+    }
     setTabErrors((prev) => ({ ...prev, [tab]: undefined }));
 
     try {
       if (tab === "summary") {
         const res = await getSummary(id, force);
         setSummary(res);
-        setContract((prev) => (prev ? { ...prev, has_summary: true } : prev));
+        setContract((prev) => (prev && !prev.has_summary ? { ...prev, has_summary: true } : prev));
+        setLoadedTabs((prev) => ({ ...prev, summary: true }));
       } else if (tab === "clauses") {
         const res = await getClauses(id, force);
         setClauses(
-          res.clauses.map((c) => ({
+          (res.clauses || []).map((c) => ({
             chunkIndex: c.chunk_index,
             pageNumber: c.page_number,
             heading: c.heading,
@@ -191,11 +220,12 @@ export default function ContractAnalysisPage() {
             confidence: c.confidence,
           }))
         );
-        setContract((prev) => (prev ? { ...prev, has_clauses: true } : prev));
+        setContract((prev) => (prev && !prev.has_clauses ? { ...prev, has_clauses: true } : prev));
+        setLoadedTabs((prev) => ({ ...prev, clauses: true }));
       } else if (tab === "risks") {
         const res = await getRisks(id, force);
         setRisks(
-          res.risks.map((risk, index) => ({
+          (res.risks || []).map((risk, index) => ({
             id: `${id}-${index}`,
             title: risk.title,
             severity: risk.severity,
@@ -207,11 +237,12 @@ export default function ContractAnalysisPage() {
             category: risk.category,
           }))
         );
-        setContract((prev) => (prev ? { ...prev, has_risks: true } : prev));
+        setContract((prev) => (prev && !prev.has_risks ? { ...prev, has_risks: true } : prev));
+        setLoadedTabs((prev) => ({ ...prev, risks: true }));
       } else if (tab === "obligations") {
         const res = await getObligations(id, force);
         setObligations(
-          res.obligations.map((o) => ({
+          (res.obligations || []).map((o) => ({
             responsibleParty: o.responsible_party,
             obligation: o.obligation,
             deadline: o.deadline,
@@ -221,20 +252,26 @@ export default function ContractAnalysisPage() {
             priority: o.priority,
           }))
         );
-        setContract((prev) => (prev ? { ...prev, has_obligations: true } : prev));
+        setContract((prev) => (prev && !prev.has_obligations ? { ...prev, has_obligations: true } : prev));
+        setLoadedTabs((prev) => ({ ...prev, obligations: true }));
       } else if (tab === "deadlines") {
         const res = await getDeadlines(id, force);
         setDeadlines(res.deadlines);
-        setContract((prev) => (prev ? { ...prev, has_deadlines: true } : prev));
+        setContract((prev) => (prev && !prev.has_deadlines ? { ...prev, has_deadlines: true } : prev));
+        setLoadedTabs((prev) => ({ ...prev, deadlines: true }));
       }
     } catch (err) {
       setTabErrors((prev) => ({
         ...prev,
         [tab]: err instanceof Error ? err.message : "Unable to load analysis.",
       }));
+      setLoadedTabs((prev) => ({ ...prev, [tab]: true }));
     } finally {
       inFlightRef.current.delete(tab);
       setTabLoading((prev) => ({ ...prev, [tab]: false }));
+      if (force) {
+        setForceLoading((prev) => ({ ...prev, [tab]: false }));
+      }
     }
   };
 
@@ -242,16 +279,10 @@ export default function ContractAnalysisPage() {
     if (!id || !contract) return;
     if (activeTab === "overview" || activeTab === "ask") return;
 
-    if (
-      (activeTab === "summary" && !summary) ||
-      (activeTab === "clauses" && clauses.length === 0) ||
-      (activeTab === "risks" && risks.length === 0) ||
-      (activeTab === "obligations" && obligations.length === 0) ||
-      (activeTab === "deadlines" && !deadlines)
-    ) {
+    if (!loadedTabs[activeTab] && !inFlightRef.current.has(activeTab)) {
       void loadTabData(activeTab, false);
     }
-  }, [activeTab, id, contract, summary, clauses.length, risks.length, obligations.length, deadlines]);
+  }, [activeTab, id, contract?.contract_id, loadedTabs]);
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -594,7 +625,7 @@ export default function ContractAnalysisPage() {
             <SummaryView summary={summary} />
           </div>
         ) : tabLoading.summary ? (
-          <LoadingState label={isTabCached("summary", contract) ? "Loading cached executive summary…" : "Analyzing contract summary with Counsel AI…"} />
+          <LoadingState label={getLoadingLabel("summary")} />
         ) : (
           <EmptyState
             icon={FileText}
@@ -668,7 +699,7 @@ export default function ContractAnalysisPage() {
             </div>
           </div>
         ) : tabLoading.clauses ? (
-          <LoadingState label={isTabCached("clauses", contract) ? "Loading cached clauses…" : "Extracting and categorizing clauses with Counsel AI…"} />
+          <LoadingState label={getLoadingLabel("clauses")} />
         ) : (
           <EmptyState
             icon={FileText}
@@ -690,13 +721,24 @@ export default function ContractAnalysisPage() {
             {tabLoading.risks && (
               <div className="flex items-center gap-2 rounded-xl bg-accent-50/80 border border-accent-200 px-4 py-2.5 text-xs text-accent-800">
                 <RefreshCw size={13} className="animate-spin text-accent-600" />
-                <span>Re-analyzing contract risks…</span>
+                <span>Auditing risks & liabilities with Counsel AI…</span>
               </div>
             )}
             {risks.map((risk) => <RiskCard key={risk.id} risk={risk} />)}
           </div>
         ) : tabLoading.risks ? (
-          <LoadingState label={isTabCached("risks", contract) ? "Loading cached risks…" : "Auditing risks & liabilities with Counsel AI…"} />
+          <LoadingState label={getLoadingLabel("risks")} />
+        ) : tabErrors.risks ? (
+          <EmptyState
+            icon={ShieldAlert}
+            title="Failed to load risks"
+            description={tabErrors.risks}
+            action={
+              <Button size="sm" onClick={() => void loadTabData("risks", true)}>
+                Retry Risk Analysis
+              </Button>
+            }
+          />
         ) : (
           <EmptyState
             icon={ShieldAlert}
@@ -764,7 +806,7 @@ export default function ContractAnalysisPage() {
             <ObligationsView obligations={filteredObligations} />
           </div>
         ) : tabLoading.obligations ? (
-          <LoadingState label={isTabCached("obligations", contract) ? "Loading cached obligations…" : "Extracting obligations with Counsel AI…"} />
+          <LoadingState label={getLoadingLabel("obligations")} />
         ) : (
           <EmptyState
             icon={ListChecks}
@@ -792,7 +834,7 @@ export default function ContractAnalysisPage() {
             <DeadlinesView deadlines={deadlines} />
           </div>
         ) : tabLoading.deadlines ? (
-          <LoadingState label={isTabCached("deadlines", contract) ? "Loading cached deadlines…" : "Extracting deadlines & dates with Counsel AI…"} />
+          <LoadingState label={getLoadingLabel("deadlines")} />
         ) : (
           <EmptyState
             icon={Calendar}
