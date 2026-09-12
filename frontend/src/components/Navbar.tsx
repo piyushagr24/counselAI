@@ -57,8 +57,10 @@ export default function Navbar() {
             <Scale size={18} className="text-accent-400" />
           </span>
           <div className="flex flex-col">
-            <span className="font-serif text-lg font-bold tracking-tight text-ink-900">Counsel</span>
-            <span className="text-[10px] font-medium tracking-wider text-slate-400 uppercase -mt-1">AI Contract Review</span>
+            <span className="font-serif text-lg font-bold tracking-tight text-ink-900">
+              Counsel<span className="text-accent-600">AI</span>
+            </span>
+            <span className="text-[10px] font-medium tracking-wider text-slate-400 uppercase -mt-1">Contract Intelligence</span>
           </div>
         </Link>
 

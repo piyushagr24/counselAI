@@ -301,16 +301,20 @@ export default function LandingPage() {
           <div>
             {/* Announcement Badge */}
             <div className="inline-flex items-center gap-2 rounded-full border border-accent-200 bg-accent-50/80 px-3 py-1 text-xs font-semibold text-accent-700 shadow-xs mb-6">
-              <Sparkles size={13} className="text-accent-600" />
-              <span>Next-Gen Legal Intelligence 2.0</span>
+              <Scale size={13} className="text-accent-600" />
+              <span>UN SDG 16 · Equal Access to Justice</span>
             </div>
 
             <h1 className="font-serif text-4xl font-bold tracking-tight leading-tight text-ink-900 sm:text-5xl md:text-6xl">
-              Review every contract like a senior partner.
+              Democratizing Legal Protection for Every Agreement.
             </h1>
 
-            <p className="mt-6 text-base sm:text-lg text-slate-600 leading-relaxed max-w-xl">
-              Counsel is your elite AI legal assistant. Instantly extract plain-language summaries, flag high-risk liabilities, track contractual obligations, and consult your documents with verified page citations.
+            <p className="mt-4 text-base sm:text-lg font-medium text-accent-800">
+              Citation-Grounded Risk Auditing, Obligation Tracking, and Fair Contract Intelligence for All.
+            </p>
+
+            <p className="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed max-w-xl">
+              CounselAI transforms dense, predatory fine print into transparent risk scores, bilateral commitments, and citation-backed legal answers—leveling the playing field against asymmetric contracts.
             </p>
 
             {/* CTAs */}
@@ -605,8 +609,8 @@ export default function LandingPage() {
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink-900 text-white">
                 <Scale size={16} />
               </span>
-              <span className="font-serif text-lg font-bold text-ink-900">Counsel</span>
-              <span className="text-xs text-slate-400">· AI Legal Contract Assistant</span>
+              <span className="font-serif text-lg font-bold text-ink-900">CounselAI</span>
+              <span className="text-xs text-slate-400">· Grounded Contract Intelligence</span>
             </div>
             <div className="flex flex-wrap items-center gap-6 text-xs text-slate-500 font-medium">
               <Link to="/dashboard" className="hover:text-ink-900 transition-colors">Overview</Link>
