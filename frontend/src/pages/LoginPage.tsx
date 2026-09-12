@@ -1,12 +1,15 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Scale, Mail, Lock, Eye, EyeOff, Sparkles, User as UserIcon, ArrowLeft } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Scale, Mail, Lock, Eye, EyeOff, User as UserIcon, ArrowLeft } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Button from "../components/ui/Button";
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { login, signup, demoLogin, isLoading, isAuthenticated } = useAuth();
+  const location = useLocation();
+  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || "/dashboard";
+
+  const { login, signup, isLoading, isAuthenticated } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -14,10 +17,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // If already logged in, redirect to dashboard or contracts
-  if (isAuthenticated && !error) {
-    // navigate to dashboard
-  }
+  // If already logged in, redirect to intended target or dashboard
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, navigate, from]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,15 +37,10 @@ export default function LoginPage() {
       } else {
         await signup(email.trim(), password.trim(), name.trim() || undefined);
       }
-      navigate("/dashboard");
+      navigate(from, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed. Please try again.");
     }
-  };
-
-  const handleDemoClick = () => {
-    demoLogin();
-    navigate("/dashboard");
   };
 
   return (
@@ -165,6 +165,9 @@ export default function LoginPage() {
                     {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
+                {mode === "signup" && (
+                  <p className="mt-1 text-[11px] text-slate-400">Password must be at least 4 characters</p>
+                )}
               </div>
 
               <Button
@@ -177,26 +180,6 @@ export default function LoginPage() {
                 {mode === "login" ? "Sign In" : "Register"}
               </Button>
             </form>
-
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-200" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-slate-400">or quick access</span>
-              </div>
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              onClick={handleDemoClick}
-              leftIcon={<Sparkles size={14} className="text-accent-600" />}
-              className="w-full border-dashed"
-            >
-              Log in with Demo Account
-            </Button>
           </div>
         </div>
       </div>

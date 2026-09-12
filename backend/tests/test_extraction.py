@@ -13,6 +13,22 @@ from app.main import app
 client = TestClient(app)
 
 
+def _auth_headers(email: str = "tester_extract@example.com", password: str = "password123") -> dict:
+    signup_res = client.post(
+        "/api/auth/signup",
+        json={"email": email, "password": password, "name": "Extract Tester"},
+    )
+    if signup_res.status_code == 200:
+        tok = signup_res.json()["access_token"]
+    else:
+        login_res = client.post(
+            "/api/auth/login",
+            json={"email": email, "password": password},
+        )
+        tok = login_res.json()["access_token"]
+    return {"Authorization": f"Bearer {tok}"}
+
+
 def _make_sample_pdf_bytes() -> bytes:
     pdf = pymupdf.open()
     page1 = pdf.new_page()
@@ -36,10 +52,12 @@ def _make_sample_docx_bytes() -> bytes:
 
 
 def test_pdf_extraction_preserves_pages():
+    headers = _auth_headers()
     pdf_bytes = _make_sample_pdf_bytes()
     response = client.post(
         "/api/contracts/upload",
         files={"file": ("sample.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+        headers=headers,
     )
     assert response.status_code == 200
     body = response.json()
@@ -54,6 +72,7 @@ def test_pdf_extraction_preserves_pages():
 
 
 def test_docx_extraction_captures_headings():
+    headers = _auth_headers()
     docx_bytes = _make_sample_docx_bytes()
     response = client.post(
         "/api/contracts/upload",
@@ -64,6 +83,7 @@ def test_docx_extraction_captures_headings():
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
         },
+        headers=headers,
     )
     assert response.status_code == 200
     body = response.json()
@@ -71,7 +91,7 @@ def test_docx_extraction_captures_headings():
 
     assert extraction["metadata"]["source_type"] == "docx"
     assert extraction["metadata"]["num_pages"] == 1
-    contract_res = client.get(f"/api/contracts/{body['contract_id']}")
+    contract_res = client.get(f"/api/contracts/{body['contract_id']}", headers=headers)
     assert contract_res.status_code == 200
     assert contract_res.json()["num_pages"] == 1
     headings = [s["heading"] for s in extraction["segments"] if s["heading"]]

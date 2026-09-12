@@ -29,9 +29,27 @@ def _make_sample_docx_bytes() -> bytes:
     return buf.getvalue()
 
 
+def _auth_headers(email: str = "vector_tester@example.com", password: str = "password123") -> dict:
+    signup_res = client.post(
+        "/api/auth/signup",
+        json={"email": email, "password": password, "name": "Vector Tester"},
+    )
+    if signup_res.status_code == 200:
+        tok = signup_res.json()["access_token"]
+    else:
+        login_res = client.post(
+            "/api/auth/login",
+            json={"email": email, "password": password},
+        )
+        tok = login_res.json()["access_token"]
+    return {"Authorization": f"Bearer {tok}"}
+
+
 def test_similarity_search_retrieves_relevant_chunk():
+    headers = _auth_headers()
     response = client.post(
         "/api/contracts/upload",
+        headers=headers,
         files={
             "file": (
                 "sample.docx",

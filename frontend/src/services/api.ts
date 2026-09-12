@@ -17,8 +17,22 @@ import type {
 const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, init);
+  const token = localStorage.getItem("counsel_auth_token");
+  const headers = new Headers(init?.headers);
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers,
+  });
+
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith("/api/auth/login") && !path.startsWith("/api/auth/signup")) {
+      localStorage.removeItem("counsel_auth_user");
+      localStorage.removeItem("counsel_auth_token");
+    }
     let detail = `Request failed with status ${response.status}`;
     try {
       const body = (await response.json()) as { detail?: string };

@@ -3,9 +3,10 @@ import math
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 
 from app.core.config import settings
+from app.routers.auth import get_current_user
 from app.models.schemas import (
     ContractDetails,
     ContractMetadata,
@@ -22,9 +23,12 @@ router = APIRouter(prefix="/api/contracts", tags=["upload"])
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_contract(file: UploadFile = File(...)) -> UploadResponse:
+async def upload_contract(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+) -> UploadResponse:
     try:
-        result = ingest_contract(file)
+        result = ingest_contract(file, user_id=current_user["id"])
     finally:
         await file.close()
     return UploadResponse(**result)
@@ -43,13 +47,31 @@ def _contract_paths(contract_id: str) -> tuple[Path, Path]:
     return source_paths[0], extraction_path
 
 
-def _read_contract(contract_id: str) -> ContractDetails:
+def verify_contract_access(contract_id: str, user_id: str) -> tuple[Path, Path, dict]:
+    """Verify that a contract exists and belongs to the specified user."""
     source_path, extraction_path = _contract_paths(contract_id)
     try:
         with extraction_path.open("r", encoding="utf-8") as file:
             extraction = json.load(file)
     except (OSError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=500, detail=f"Failed to read contract metadata: {exc}")
+
+    if extraction.get("user_id") != user_id:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    return source_path, extraction_path, extraction
+
+
+def _read_contract(contract_id: str, user_id: str | None = None) -> ContractDetails:
+    if user_id is not None:
+        source_path, extraction_path, extraction = verify_contract_access(contract_id, user_id)
+    else:
+        source_path, extraction_path = _contract_paths(contract_id)
+        try:
+            with extraction_path.open("r", encoding="utf-8") as file:
+                extraction = json.load(file)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=500, detail=f"Failed to read contract metadata: {exc}")
 
     # Inspect cached analysis files if available
     risk_count = 0
@@ -111,7 +133,7 @@ def _read_contract(contract_id: str) -> ContractDetails:
 
 
 @router.get("/stats", response_model=DashboardStatsResponse)
-async def get_dashboard_stats() -> DashboardStatsResponse:
+async def get_dashboard_stats(current_user: dict = Depends(get_current_user)) -> DashboardStatsResponse:
     upload_dir = Path(settings.upload_dir)
     if not upload_dir.exists():
         return DashboardStatsResponse(
@@ -119,7 +141,8 @@ async def get_dashboard_stats() -> DashboardStatsResponse:
             total_obligations=0, total_deadlines=0
         )
 
-    contracts = await list_contracts()
+    contracts = await list_contracts(current_user=current_user)
+    user_contract_ids = {c.contract_id for c in contracts}
     contract_filenames = {c.contract_id: c.filename for c in contracts}
     total_pages = sum(c.num_pages or 1 for c in contracts)
 
@@ -130,8 +153,10 @@ async def get_dashboard_stats() -> DashboardStatsResponse:
     low_risk_count = 0
     all_risks: list[DashboardRiskItem] = []
 
-    for rf_file in upload_dir.glob("*_risks.json"):
-        cid = rf_file.name.replace("_risks.json", "")
+    for cid in user_contract_ids:
+        rf_file = upload_dir / f"{cid}_risks.json"
+        if not rf_file.is_file():
+            continue
         cname = contract_filenames.get(cid, "Contract")
         try:
             with rf_file.open("r", encoding="utf-8") as rf:
@@ -168,8 +193,10 @@ async def get_dashboard_stats() -> DashboardStatsResponse:
 
     total_obligations = 0
     all_obligations: list[DashboardObligationItem] = []
-    for ob_file in upload_dir.glob("*_obligations.json"):
-        cid = ob_file.name.replace("_obligations.json", "")
+    for cid in user_contract_ids:
+        ob_file = upload_dir / f"{cid}_obligations.json"
+        if not ob_file.is_file():
+            continue
         cname = contract_filenames.get(cid, "Contract")
         try:
             with ob_file.open("r", encoding="utf-8") as f:
@@ -192,8 +219,10 @@ async def get_dashboard_stats() -> DashboardStatsResponse:
 
     total_deadlines = 0
     all_deadlines: list[DashboardDeadlineItem] = []
-    for dl_file in upload_dir.glob("*_deadlines.json"):
-        cid = dl_file.name.replace("_deadlines.json", "")
+    for cid in user_contract_ids:
+        dl_file = upload_dir / f"{cid}_deadlines.json"
+        if not dl_file.is_file():
+            continue
         cname = contract_filenames.get(cid, "Contract")
         try:
             with dl_file.open("r", encoding="utf-8") as f:
@@ -302,7 +331,7 @@ async def get_dashboard_stats() -> DashboardStatsResponse:
 
 
 @router.get("", response_model=list[ContractMetadata])
-async def list_contracts() -> list[ContractMetadata]:
+async def list_contracts(current_user: dict = Depends(get_current_user)) -> list[ContractMetadata]:
     upload_dir = Path(settings.upload_dir)
     if not upload_dir.exists():
         return []
@@ -312,26 +341,38 @@ async def list_contracts() -> list[ContractMetadata]:
         if "_" in extraction_path.stem:
             continue
         try:
-            contracts.append(_read_contract(extraction_path.stem))
+            with extraction_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("user_id") != current_user["id"]:
+                continue
+            contracts.append(_read_contract(extraction_path.stem, user_id=current_user["id"]))
         except HTTPException:
             # Ignore incomplete or malformed entries in the upload cache.
+            continue
+        except Exception:
             continue
     return [ContractMetadata(**contract.model_dump(exclude={"extraction"})) for contract in contracts]
 
 
 @router.get("/{contract_id}", response_model=ContractDetails)
-async def get_contract(contract_id: str) -> ContractDetails:
-    return _read_contract(contract_id)
+async def get_contract(
+    contract_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> ContractDetails:
+    return _read_contract(contract_id, user_id=current_user["id"])
 
 
 @router.delete("/{contract_id}", status_code=204)
-async def delete_contract(contract_id: str) -> None:
-    source_path, extraction_path = _contract_paths(contract_id)
+async def delete_contract(
+    contract_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> None:
+    source_path, extraction_path, _ = verify_contract_access(contract_id, current_user["id"])
     try:
-        source_path.unlink()
-        extraction_path.unlink()
+        source_path.unlink(missing_ok=True)
+        extraction_path.unlink(missing_ok=True)
         for cached_path in extraction_path.parent.glob(f"{contract_id}_*.json"):
-            cached_path.unlink()
+            cached_path.unlink(missing_ok=True)
         delete_chunks(contract_id)
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Failed to delete contract: {exc}")

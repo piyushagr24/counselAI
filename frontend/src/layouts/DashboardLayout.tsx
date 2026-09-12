@@ -37,32 +37,7 @@ interface NotificationItem {
   read: boolean;
 }
 
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: "n1",
-    title: "High Risk Detected",
-    desc: "Unlimited indemnification clause flagged in Master Services Agreement.",
-    time: "10m ago",
-    type: "risk",
-    read: false,
-  },
-  {
-    id: "n2",
-    title: "Analysis Ready",
-    desc: "Extraction & classification completed for SaaS_License_2026.pdf.",
-    time: "1h ago",
-    type: "success",
-    read: false,
-  },
-  {
-    id: "n3",
-    title: "Notice Deadline Approaching",
-    desc: "Termination notice window opens in 30 days.",
-    time: "3h ago",
-    type: "deadline",
-    read: true,
-  },
-];
+const INITIAL_NOTIFICATIONS: NotificationItem[] = [];
 
 export default function DashboardLayout() {
   const location = useLocation();
@@ -330,12 +305,12 @@ export default function DashboardLayout() {
               {isProfileOpen && (
                 <div className="absolute right-0 mt-2 w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl z-50 animate-in fade-in slide-in-from-top-1">
                   <div className="border-b border-slate-100 px-3 py-2.5">
-                    <p className="text-xs font-semibold text-ink-900">{user?.name || "Jane Doe"}</p>
-                    <p className="text-[11px] text-slate-500 truncate">{user?.email || "jane.doe@legalcorp.com"}</p>
+                    <p className="text-xs font-semibold text-ink-900">{user?.name || user?.email?.split("@")[0] || "User"}</p>
+                    <p className="text-[11px] text-slate-500 truncate">{user?.email || ""}</p>
                     <div className="mt-1.5 flex items-center gap-1.5">
                       <span className="inline-flex items-center gap-1 rounded bg-accent-50 px-1.5 py-0.5 text-[10px] font-medium text-accent-700">
                         <Shield size={10} />
-                        {user?.role || "Senior Counsel"}
+                        {user?.role || "Legal Professional"}
                       </span>
                     </div>
                   </div>

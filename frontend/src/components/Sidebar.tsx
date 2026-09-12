@@ -67,7 +67,7 @@ export default function Sidebar({ onNavClick, className = "hidden md:flex" }: Si
       {isAuthenticated && user && (
         <div className="flex items-center justify-between border-t border-slate-100 pt-4 px-1">
           <div className="min-w-0 flex-1 pr-2">
-            <p className="truncate text-xs font-semibold text-ink-900">{user.name || "Jane Doe"}</p>
+            <p className="truncate text-xs font-semibold text-ink-900">{user.name || user.email.split("@")[0]}</p>
             <p className="truncate text-[10px] text-slate-400">{user.email}</p>
           </div>
           <button

@@ -11,11 +11,29 @@ from app.services.rag import answer_question
 client = TestClient(app)
 
 
+def _auth_headers(email: str = "tester_qa@example.com", password: str = "password123") -> dict:
+    signup_res = client.post(
+        "/api/auth/signup",
+        json={"email": email, "password": password, "name": "QA Tester"},
+    )
+    if signup_res.status_code == 200:
+        tok = signup_res.json()["access_token"]
+    else:
+        login_res = client.post(
+            "/api/auth/login",
+            json={"email": email, "password": password},
+        )
+        tok = login_res.json()["access_token"]
+    return {"Authorization": f"Bearer {tok}"}
+
+
 def test_ask_general_endpoint():
     """Verify general questions can be sent to /api/contracts/ask without a contract ID."""
+    headers = _auth_headers()
     response = client.post(
         "/api/contracts/ask",
         json={"question": "What is a Non-Disclosure Agreement (NDA)?"},
+        headers=headers,
     )
     assert response.status_code == 200
     data = response.json()
@@ -27,9 +45,11 @@ def test_ask_general_endpoint():
 
 def test_ask_general_contract_id_route():
     """Verify route /api/contracts/general/ask also handles general legal inquiries."""
+    headers = _auth_headers()
     response = client.post(
         "/api/contracts/general/ask",
         json={"question": "What is an indemnification clause in contract law?"},
+        headers=headers,
     )
     assert response.status_code == 200
     data = response.json()
@@ -40,9 +60,11 @@ def test_ask_general_contract_id_route():
 
 def test_ask_empty_question_rejected():
     """Verify whitespace or empty questions return HTTP 400."""
+    headers = _auth_headers()
     response = client.post(
         "/api/contracts/ask",
         json={"question": "   "},
+        headers=headers,
     )
     assert response.status_code == 400
     assert "Question must not be empty" in response.json()["detail"]

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import type { User } from "../types";
-import { loginUser, signupUser } from "../services/api";
+import { loginUser, signupUser, getCurrentUser } from "../services/api";
 
 interface AuthContextType {
   user: User | null;
@@ -9,19 +9,11 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, pass: string) => Promise<void>;
   signup: (email: string, pass: string, name?: string) => Promise<void>;
-  demoLogin: () => void;
   logout: () => void;
   isLoginModalOpen: boolean;
   openLoginModal: () => void;
   closeLoginModal: () => void;
 }
-
-const DEMO_USER: User = {
-  id: "usr_demo_1",
-  email: "jane.doe@legalcorp.com",
-  name: "Jane Doe",
-  role: "Senior Legal Counsel",
-};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -32,16 +24,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY_USER);
-      return stored ? JSON.parse(stored) : DEMO_USER;
+      return stored ? JSON.parse(stored) : null;
     } catch {
-      return DEMO_USER;
+      return null;
     }
   });
   const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem(STORAGE_KEY_TOKEN) || "counsel_demo_token";
+    return localStorage.getItem(STORAGE_KEY_TOKEN);
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  // Validate session on mount
+  useEffect(() => {
+    const storedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
+    if (storedToken) {
+      getCurrentUser(storedToken)
+        .then((userData) => {
+          setUser(userData);
+        })
+        .catch(() => {
+          setUser(null);
+          setToken(null);
+          localStorage.removeItem(STORAGE_KEY_USER);
+          localStorage.removeItem(STORAGE_KEY_TOKEN);
+        });
+    }
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -62,21 +71,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, pass: string) => {
     setIsLoading(true);
     try {
-      try {
-        const res = await loginUser(email, pass);
-        setUser(res.user);
-        setToken(res.access_token);
-      } catch {
-        // Fallback for offline or local testing if backend isn't running or endpoint fails
-        const fallbackUser: User = {
-          id: `usr_${Date.now()}`,
-          email,
-          name: email.split("@")[0].replace(".", " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-          role: "Legal Professional",
-        };
-        setUser(fallbackUser);
-        setToken(`counsel_local_tok_${Date.now()}`);
-      }
+      const res = await loginUser(email, pass);
+      setUser(res.user);
+      setToken(res.access_token);
       setIsLoginModalOpen(false);
     } finally {
       setIsLoading(false);
@@ -86,30 +83,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signup = async (email: string, pass: string, name?: string) => {
     setIsLoading(true);
     try {
-      try {
-        const res = await signupUser(email, pass, name);
-        setUser(res.user);
-        setToken(res.access_token);
-      } catch {
-        const fallbackUser: User = {
-          id: `usr_${Date.now()}`,
-          email,
-          name: name || email.split("@")[0].replace(".", " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-          role: "Legal Professional",
-        };
-        setUser(fallbackUser);
-        setToken(`counsel_local_tok_${Date.now()}`);
-      }
+      const res = await signupUser(email, pass, name);
+      setUser(res.user);
+      setToken(res.access_token);
       setIsLoginModalOpen(false);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const demoLogin = () => {
-    setUser(DEMO_USER);
-    setToken("counsel_demo_token");
-    setIsLoginModalOpen(false);
   };
 
   const logout = () => {
@@ -131,7 +111,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         signup,
-        demoLogin,
         logout,
         isLoginModalOpen,
         openLoginModal,

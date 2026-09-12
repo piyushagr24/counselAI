@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Mail, Lock, Eye, EyeOff, Scale, Sparkles, User as UserIcon } from "lucide-react";
+import { X, Mail, Lock, Eye, EyeOff, Scale, User as UserIcon } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Button from "./ui/Button";
 
@@ -9,7 +9,7 @@ interface LoginModalProps {
 }
 
 export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
-  const { login, signup, demoLogin, isLoading } = useAuth();
+  const { login, signup, isLoading } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -36,11 +36,6 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed. Please try again.");
     }
-  };
-
-  const handleDemoClick = () => {
-    demoLogin();
-    onClose();
   };
 
   return (
@@ -177,27 +172,6 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
               {mode === "login" ? "Sign In to Counsel" : "Create Account"}
             </Button>
           </form>
-
-          <div className="relative my-5">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-200" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 text-slate-400">or instant preview</span>
-            </div>
-          </div>
-
-          {/* Instant demo account button */}
-          <Button
-            type="button"
-            variant="outline"
-            size="md"
-            onClick={handleDemoClick}
-            leftIcon={<Sparkles size={14} className="text-accent-600" />}
-            className="w-full border-dashed"
-          >
-            Continue with Demo Account
-          </Button>
 
           <p className="mt-4 text-center text-xs text-slate-400">
             By continuing, you accept Counsel's terms of service and confidential data policy.

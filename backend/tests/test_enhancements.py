@@ -19,12 +19,30 @@ def _real_pdf_bytes(text: str = "Standard agreement text.") -> bytes:
     return data
 
 
+def _auth_headers(email: str = "tester_enh@example.com", password: str = "password123") -> dict:
+    signup_res = client.post(
+        "/api/auth/signup",
+        json={"email": email, "password": password, "name": "Enhancement Tester"},
+    )
+    if signup_res.status_code == 200:
+        tok = signup_res.json()["access_token"]
+    else:
+        login_res = client.post(
+            "/api/auth/login",
+            json={"email": email, "password": password},
+        )
+        tok = login_res.json()["access_token"]
+    return {"Authorization": f"Bearer {tok}"}
+
+
 def test_magic_bytes_validation():
+    headers = _auth_headers()
     # 1. Reject fake PDF
     fake_pdf = io.BytesIO(b"NOT A REAL PDF FILE CONTENT")
     res = client.post(
         "/api/contracts/upload",
         files={"file": ("spoofed.pdf", fake_pdf, "application/pdf")},
+        headers=headers,
     )
     assert res.status_code == 400
     assert "Corrupted or invalid PDF" in res.json()["detail"]
@@ -34,13 +52,15 @@ def test_magic_bytes_validation():
     res = client.post(
         "/api/contracts/upload",
         files={"file": ("spoofed.docx", fake_docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        headers=headers,
     )
     assert res.status_code == 400
     assert "Corrupted or invalid DOCX" in res.json()["detail"]
 
 
 def test_dashboard_stats_endpoint():
-    res = client.get("/api/contracts/stats")
+    headers = _auth_headers()
+    res = client.get("/api/contracts/stats", headers=headers)
     assert res.status_code == 200
     data = res.json()
     assert "total_contracts" in data
@@ -53,6 +73,7 @@ def test_dashboard_stats_endpoint():
 
 
 def test_compare_by_id_and_delete_flow():
+    headers = _auth_headers()
     # Upload two real contracts
     pdf1 = _real_pdf_bytes("Contract version 1 with initial terms and $1000 fee.")
     pdf2 = _real_pdf_bytes("Contract version 2 with modified terms and $2000 fee.")
@@ -60,6 +81,7 @@ def test_compare_by_id_and_delete_flow():
     res1 = client.post(
         "/api/contracts/upload",
         files={"file": ("v1.pdf", io.BytesIO(pdf1), "application/pdf")},
+        headers=headers,
     )
     assert res1.status_code == 200
     id1 = res1.json()["contract_id"]
@@ -67,6 +89,7 @@ def test_compare_by_id_and_delete_flow():
     res2 = client.post(
         "/api/contracts/upload",
         files={"file": ("v2.pdf", io.BytesIO(pdf2), "application/pdf")},
+        headers=headers,
     )
     assert res2.status_code == 200
     id2 = res2.json()["contract_id"]
@@ -75,6 +98,7 @@ def test_compare_by_id_and_delete_flow():
     cmp_res = client.post(
         "/api/contracts/compare-ids",
         json={"contract_a_id": id1, "contract_b_id": id2},
+        headers=headers,
     )
     assert cmp_res.status_code == 200
     cmp_data = cmp_res.json()
@@ -84,14 +108,14 @@ def test_compare_by_id_and_delete_flow():
     assert "ai_summary" in cmp_data
 
     # Test delete endpoint
-    del_res1 = client.delete(f"/api/contracts/{id1}")
+    del_res1 = client.delete(f"/api/contracts/{id1}", headers=headers)
     assert del_res1.status_code == 204
 
-    del_res2 = client.delete(f"/api/contracts/{id2}")
+    del_res2 = client.delete(f"/api/contracts/{id2}", headers=headers)
     assert del_res2.status_code == 204
 
     # Verify deleted contract is gone
-    get_res = client.get(f"/api/contracts/{id1}")
+    get_res = client.get(f"/api/contracts/{id1}", headers=headers)
     assert get_res.status_code == 404
 
 

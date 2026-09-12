@@ -25,6 +25,7 @@ import {
 import Navbar from "../components/Navbar";
 import DisclaimerBanner from "../components/DisclaimerBanner";
 import Button from "../components/ui/Button";
+import { useAuth } from "../context/AuthContext";
 
 // Interactive Hero Preview Widget
 function InteractiveHeroDemo() {
@@ -286,6 +287,7 @@ const faqs = [
 ];
 
 export default function LandingPage() {
+  const { isAuthenticated } = useAuth();
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   return (
@@ -319,7 +321,7 @@ export default function LandingPage() {
 
             {/* CTAs */}
             <div className="mt-8 flex flex-wrap items-center gap-3.5">
-              <Link to="/contracts">
+              <Link to={isAuthenticated ? "/contracts" : "/login"}>
                 <Button
                   variant="primary"
                   size="lg"
@@ -327,12 +329,12 @@ export default function LandingPage() {
                   rightIcon={<ArrowRight size={16} />}
                   className="shadow-md"
                 >
-                  Analyze a Contract Free
+                  {isAuthenticated ? "Analyze a Contract" : "Get Started Free"}
                 </Button>
               </Link>
-              <Link to="/dashboard">
+              <Link to={isAuthenticated ? "/dashboard" : "/login"}>
                 <Button variant="outline" size="lg">
-                  Explore Live Demo
+                  {isAuthenticated ? "Go to Dashboard" : "Sign In to Workspace"}
                 </Button>
               </Link>
             </div>

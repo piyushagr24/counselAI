@@ -166,21 +166,34 @@ export default function Navbar() {
             </Button>
           )}
 
-          <Link to="/dashboard">
-            <Button variant="outline" size="sm">
-              Try Demo
-            </Button>
-          </Link>
-
-          <Link to="/contracts">
-            <Button
-              variant="primary"
-              size="sm"
-              leftIcon={<Sparkles size={13} className="text-accent-400" />}
-            >
-              Analyze Contract
-            </Button>
-          </Link>
+          {isAuthenticated ? (
+            <>
+              <Link to="/dashboard">
+                <Button variant="outline" size="sm">
+                  Dashboard
+                </Button>
+              </Link>
+              <Link to="/contracts">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<Sparkles size={13} className="text-accent-400" />}
+                >
+                  Analyze Contract
+                </Button>
+              </Link>
+            </>
+          ) : (
+            <Link to="/login">
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon={<Sparkles size={13} className="text-accent-400" />}
+              >
+                Get Started
+              </Button>
+            </Link>
+          )}
         </div>
 
         {/* Mobile menu toggle button */}
@@ -260,17 +273,27 @@ export default function Navbar() {
               </Button>
             )}
 
-            <div className="grid grid-cols-2 gap-2 mt-1">
-              <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)}>
-                <Button variant="secondary" size="sm" className="w-full justify-center">
-                  Try Demo
-                </Button>
-              </Link>
-              <Link to="/contracts" onClick={() => setMobileMenuOpen(false)}>
-                <Button variant="primary" size="sm" className="w-full justify-center">
-                  Analyze
-                </Button>
-              </Link>
+            <div className="mt-1">
+              {isAuthenticated ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="secondary" size="sm" className="w-full justify-center">
+                      Dashboard
+                    </Button>
+                  </Link>
+                  <Link to="/contracts" onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="primary" size="sm" className="w-full justify-center">
+                      Analyze
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
+                  <Button variant="primary" size="sm" className="w-full justify-center">
+                    Get Started
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
         </div>

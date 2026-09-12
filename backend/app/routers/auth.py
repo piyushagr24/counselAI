@@ -2,8 +2,9 @@ import json
 import os
 import hashlib
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Depends
 from pydantic import BaseModel, EmailStr
 
 from app.core.config import settings
@@ -12,18 +13,6 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 USERS_FILE = os.path.join(settings.upload_dir, "users.json")
 
-# In-memory fallback and seed users
-DEFAULT_USERS = {
-    "jane.doe@legalcorp.com": {
-        "id": "usr_demo_1",
-        "email": "jane.doe@legalcorp.com",
-        "name": "Jane Doe",
-        "password_hash": hashlib.sha256("counsel123".encode()).hexdigest(),
-        "role": "Senior Legal Counsel",
-        "created_at": "2026-01-15T10:00:00Z",
-    }
-}
-
 
 def _load_users() -> dict:
     if os.path.exists(USERS_FILE):
@@ -31,8 +20,8 @@ def _load_users() -> dict:
             with open(USERS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
-            return DEFAULT_USERS.copy()
-    return DEFAULT_USERS.copy()
+            return {}
+    return {}
 
 
 def _save_users(users: dict) -> None:
@@ -43,6 +32,30 @@ def _save_users(users: dict) -> None:
 
 def _hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
+
+
+def _generate_token(user: dict) -> str:
+    salt = hashlib.md5(user["email"].encode()).hexdigest()[:8]
+    return f"counsel_tok_{user['id']}_{salt}"
+
+
+def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+    """FastAPI dependency to enforce authentication and extract the current user."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Not authenticated. Please sign in.")
+
+    parts = authorization.strip().split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        token = parts[1]
+    else:
+        token = authorization.strip()
+
+    users = _load_users()
+    for u in users.values():
+        if token == _generate_token(u):
+            return u
+
+    raise HTTPException(status_code=401, detail="Session expired or invalid token. Please sign in.")
 
 
 class LoginRequest(BaseModel):
@@ -76,28 +89,14 @@ def login(payload: LoginRequest):
     users = _load_users()
 
     user = users.get(email_key)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
     pw_hash = _hash_password(payload.password)
+    if user.get("password_hash") != pw_hash:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
 
-    # If user doesn't exist yet, we can either reject or auto-register for a friendly dev experience.
-    # We authenticate against stored password if user exists:
-    if user:
-        if user["password_hash"] != pw_hash:
-            raise HTTPException(status_code=401, detail="Invalid email or password.")
-    else:
-        # Create user account automatically if it's the first time
-        user_name = email_key.split("@")[0].replace(".", " ").title()
-        user = {
-            "id": f"usr_{uuid.uuid4().hex[:8]}",
-            "email": email_key,
-            "name": user_name,
-            "password_hash": pw_hash,
-            "role": "Legal Professional",
-            "created_at": "2026-09-12T00:00:00Z",
-        }
-        users[email_key] = user
-        _save_users(users)
-
-    token = f"counsel_tok_{user['id']}_{hashlib.md5(user['email'].encode()).hexdigest()[:8]}"
+    token = _generate_token(user)
     return AuthResponse(
         access_token=token,
         user=UserResponse(
@@ -116,25 +115,24 @@ def signup(payload: SignupRequest):
     users = _load_users()
 
     if email_key in users:
-        # If already exists, verify password and log in
-        return login(LoginRequest(email=payload.email, password=payload.password))
+        raise HTTPException(status_code=400, detail="An account with this email already exists. Please sign in.")
 
     if len(payload.password) < 4:
         raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
 
     user_name = payload.name.strip() if payload.name and payload.name.strip() else email_key.split("@")[0].replace(".", " ").title()
     new_user = {
-        "id": f"usr_{uuid.uuid4().hex[:8]}",
+        "id": f"usr_{uuid.uuid4().hex[:10]}",
         "email": email_key,
         "name": user_name,
         "password_hash": _hash_password(payload.password),
         "role": "Legal Professional",
-        "created_at": "2026-09-12T00:00:00Z",
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     users[email_key] = new_user
     _save_users(users)
 
-    token = f"counsel_tok_{new_user['id']}_{hashlib.md5(new_user['email'].encode()).hexdigest()[:8]}"
+    token = _generate_token(new_user)
     return AuthResponse(
         access_token=token,
         user=UserResponse(
@@ -148,38 +146,11 @@ def signup(payload: SignupRequest):
 
 
 @router.get("/me", response_model=UserResponse)
-def get_current_user(authorization: Optional[str] = Header(None)):
-    if not authorization:
-        # Return default demo user if not provided
-        users = _load_users()
-        demo = users.get("jane.doe@legalcorp.com", DEFAULT_USERS["jane.doe@legalcorp.com"])
-        return UserResponse(
-            id=demo["id"],
-            email=demo["email"],
-            name=demo["name"],
-            role=demo.get("role"),
-            created_at=demo.get("created_at"),
-        )
-
-    token = authorization.replace("Bearer ", "").strip()
-    users = _load_users()
-    for u in users.values():
-        expected_token = f"counsel_tok_{u['id']}_{hashlib.md5(u['email'].encode()).hexdigest()[:8]}"
-        if token == expected_token:
-            return UserResponse(
-                id=u["id"],
-                email=u["email"],
-                name=u["name"],
-                role=u.get("role"),
-                created_at=u.get("created_at"),
-            )
-
-    # Fallback to demo user
-    demo = users.get("jane.doe@legalcorp.com", DEFAULT_USERS["jane.doe@legalcorp.com"])
+def get_me(current_user: dict = Depends(get_current_user)):
     return UserResponse(
-        id=demo["id"],
-        email=demo["email"],
-        name=demo["name"],
-        role=demo.get("role"),
-        created_at=demo.get("created_at"),
+        id=current_user["id"],
+        email=current_user["email"],
+        name=current_user.get("name") or current_user["email"].split("@")[0].title(),
+        role=current_user.get("role", "Legal Professional"),
+        created_at=current_user.get("created_at"),
     )
