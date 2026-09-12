@@ -360,29 +360,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Trust & Metrics Banner */}
-      <section className="border-y border-slate-200 bg-slate-50/70 py-8">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="grid grid-cols-2 gap-6 md:grid-cols-4 text-center">
-            <div>
-              <p className="text-2xl sm:text-3xl font-bold text-ink-900">50,000+</p>
-              <p className="mt-1 text-xs text-slate-500">Clauses Analyzed</p>
-            </div>
-            <div>
-              <p className="text-2xl sm:text-3xl font-bold text-ink-900">99.4%</p>
-              <p className="mt-1 text-xs text-slate-500">Extraction Precision</p>
-            </div>
-            <div>
-              <p className="text-2xl sm:text-3xl font-bold text-ink-900">&lt; 3.2s</p>
-              <p className="mt-1 text-xs text-slate-500">RAG Response Speed</p>
-            </div>
-            <div>
-              <p className="text-2xl sm:text-3xl font-bold text-ink-900">100%</p>
-              <p className="mt-1 text-xs text-slate-500">Zero Retention on LLMs</p>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* Features Grid */}
       <section id="features" className="py-20 bg-white">
