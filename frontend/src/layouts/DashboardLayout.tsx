@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Outlet, useLocation, useNavigate, Link } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell,
   Search,
@@ -10,10 +10,8 @@ import {
   LogOut,
   ChevronDown,
   Menu,
-  Shield,
   Clock,
   Sparkles,
-  ExternalLink,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import { useAuth } from "../context/AuthContext";
@@ -137,16 +135,8 @@ export default function DashboardLayout() {
             className="fixed inset-0 bg-ink-900/60 backdrop-blur-sm"
             onClick={() => setMobileSidebarOpen(false)}
           />
-          <div className="relative flex w-64 flex-col bg-white">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <span className="font-serif font-bold text-ink-900">Counsel Navigation</span>
-              <button onClick={() => setMobileSidebarOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              <Sidebar onNavClick={() => setMobileSidebarOpen(false)} className="flex border-r-0 w-full" />
-            </div>
+          <div className="relative flex w-64 flex-col bg-white h-full shadow-2xl z-10">
+            <Sidebar onNavClick={() => setMobileSidebarOpen(false)} className="flex border-r-0 w-full h-full" />
           </div>
         </div>
       )}
@@ -303,55 +293,29 @@ export default function DashboardLayout() {
 
               {/* Profile Dropdown */}
               {isProfileOpen && (
-                <div className="absolute right-0 mt-2 w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl z-50 animate-in fade-in slide-in-from-top-1">
-                  <div className="border-b border-slate-100 px-3 py-2.5">
-                    <p className="text-xs font-semibold text-ink-900">{user?.name || user?.email?.split("@")[0] || "User"}</p>
-                    <p className="text-[11px] text-slate-500 truncate">{user?.email || ""}</p>
-                    <div className="mt-1.5 flex items-center gap-1.5">
-                      <span className="inline-flex items-center gap-1 rounded bg-accent-50 px-1.5 py-0.5 text-[10px] font-medium text-accent-700">
-                        <Shield size={10} />
-                        {user?.role || "Legal Professional"}
-                      </span>
+                <div className="absolute right-0 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-xl z-50 animate-in fade-in slide-in-from-top-1">
+                  <div className="flex items-center gap-3 px-3 py-2.5 bg-slate-50/70 rounded-lg border border-slate-100">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ink-900 text-xs font-bold text-white shadow-xs">
+                      {getInitials(user?.name, user?.email)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-ink-900 truncate">
+                        {user?.name || user?.email?.split("@")[0] || "User"}
+                      </p>
+                      <p className="text-[11px] text-slate-500 truncate">{user?.email || ""}</p>
                     </div>
                   </div>
 
-                  <div className="py-1">
-                    <Link
-                      to="/dashboard"
-                      onClick={() => setIsProfileOpen(false)}
-                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                      <Sparkles size={14} className="text-slate-400" />
-                      Executive Dashboard
-                    </Link>
-                    <Link
-                      to="/contracts"
-                      onClick={() => setIsProfileOpen(false)}
-                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                      <FileText size={14} className="text-slate-400" />
-                      Contract Vault
-                    </Link>
-                    <Link
-                      to="/"
-                      onClick={() => setIsProfileOpen(false)}
-                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                      <ExternalLink size={14} className="text-slate-400" />
-                      Public Product Page
-                    </Link>
-                  </div>
-
-                  <div className="border-t border-slate-100 pt-1">
+                  <div className="mt-2 pt-1 border-t border-slate-100">
                     {isAuthenticated ? (
                       <button
                         onClick={() => {
                           logout();
                           setIsProfileOpen(false);
                         }}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-risk-high hover:bg-risk-high/5 transition-colors"
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors"
                       >
-                        <LogOut size={14} />
+                        <LogOut size={15} />
                         Sign Out
                       </button>
                     ) : (
@@ -360,9 +324,9 @@ export default function DashboardLayout() {
                           openLoginModal();
                           setIsProfileOpen(false);
                         }}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-accent-600 hover:bg-accent-50 transition-colors"
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-accent-600 hover:bg-accent-50 transition-colors"
                       >
-                        <Sparkles size={14} />
+                        <Sparkles size={15} />
                         Sign In / Switch User
                       </button>
                     )}

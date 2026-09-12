@@ -21,6 +21,7 @@ backend/uploads/*
 backend/chroma_db/*
 !backend/chroma_db/.gitkeep
 uploads/
+uploads_backup/
 chroma_db/
 
 # frontend
