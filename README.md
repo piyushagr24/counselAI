@@ -35,7 +35,7 @@
 | 📑 **Executive Synthesis** | Distills complex agreements into plain-English commercial summaries: parties, effective dates, governing law, payment terms, duration, and renewal conditions. |
 | 📋 **Bilateral Obligation Matrix** | Parses who owes what (Vendor vs Client), categorizing commitments by priority levels, deadlines, and conditional triggers. |
 | ⏰ **Deadline & Milestone Extraction** | Extracts critical milestones including effective dates, renewal notice windows, Net-30 payment deadlines, and audit periods. |
-| 🏷️ **Clause Taxonomy & Classification** | Categorizes legal clauses using zero-shot NLI models (`facebook/bart-large-mnli`) or domain-fine-tuned checkpoints across standard commercial categories. |
+| 🏷️ **Clause Taxonomy & Classification** | Categorizes legal clauses using zero-shot NLI models (`valhalla/distilbart-mnli-12-3` / `facebook/bart-large-mnli`) or domain-fine-tuned checkpoints across standard commercial categories. |
 | 💬 **Grounded RAG Q&A ("Ask AI")** | Multi-turn legal chat assistant strictly grounded in document vectors with verifiable page numbers and clause section citations to prevent hallucinations. |
 | ⚖️ **Contract Comparison & Redlining** | Side-by-side contract diffing highlighting inserted, modified, or deleted clauses between document versions. |
 | 📄 **One-Click Executive Report Export** | Generates cleanly structured Markdown audit reports for sharing with legal counsel, stakeholders, or procurement teams. |
@@ -102,7 +102,7 @@
 ### AI, Vector Store & NLP
 - **Vector Database**: [ChromaDB](https://www.trychroma.com/) (with lightweight in-memory fallback)
 - **Embedding Models**: `sentence-transformers/all-MiniLM-L6-v2`
-- **Zero-Shot Classification**: `facebook/bart-large-mnli` (optional local `LegalBERT`/`RoBERTa` fine-tuned checkpoints)
+- **Zero-Shot Classification**: `valhalla/distilbart-mnli-12-3` (default lightweight) / `facebook/bart-large-mnli` (optional local `LegalBERT`/`RoBERTa` fine-tuned checkpoints)
 - **LLM Providers**: Groq (`qwen/qwen3.8-27b`, `openai/gpt-oss-120b`), Google Gemini (`gemini-2.0-flash`), Anthropic Claude (`claude-sonnet-5`), OpenAI (`gpt-4o-mini`), or offline Mock fallback
 
 ---
