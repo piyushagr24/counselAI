@@ -44,9 +44,10 @@ def classify_contract(contract_id: str, force: bool = False) -> Dict[str, Any]:
 
     total_pages = extraction.get("metadata", {}).get("num_pages") or 1
     classifier = get_classifier()
+    chunk_texts = [c["text"] for c in chunks]
+    classifications = classifier.classify_batch(chunk_texts)
     results = []
-    for i, chunk in enumerate(chunks):
-        category, confidence = classifier.classify(chunk["text"])
+    for i, (chunk, (category, confidence)) in enumerate(zip(chunks, classifications)):
         p_num = chunk.get("page_number")
         if p_num is None or p_num <= 0:
             p_num = min(total_pages, max(1, math.ceil((i + 1) / max(1, len(chunks) / total_pages))))

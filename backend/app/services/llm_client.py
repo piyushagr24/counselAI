@@ -236,6 +236,18 @@ def _generate_gemini(system_prompt: str, user_prompt: str, max_tokens: int) -> s
 def _generate_mock(system_prompt: str, user_prompt: str) -> str:
     """Return schema-compatible responses for local development and tests."""
     prompt = system_prompt.lower()
+    if "numbered contract excerpt" in prompt or "legal clause categories" in prompt:
+        import re
+        indices = [int(m) for m in re.findall(r"\[Excerpt\s+(\d+)\]", user_prompt)]
+        categories = ["Confidentiality", "Payment", "Termination", "Liability", "Governing Law", "Intellectual Property"]
+        mock_items = []
+        for idx in (indices or [1]):
+            mock_items.append({
+                "index": idx,
+                "category": categories[(idx - 1) % len(categories)],
+                "confidence": 0.92,
+            })
+        return json.dumps(mock_items)
     if "exactly this sentence" in prompt and "could not find" in prompt:
         return "I could not find this information in the uploaded contract."
     if ("contract_purpose" in prompt or "executive_summary" in prompt) and "important_clauses" in prompt:
