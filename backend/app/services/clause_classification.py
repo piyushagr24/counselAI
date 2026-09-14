@@ -61,6 +61,7 @@ def classify_contract(contract_id: str, force: bool = False) -> Dict[str, Any]:
             }
         )
 
+    results.sort(key=lambda x: x.get("confidence", 0), reverse=True)
     output = {"contract_id": contract_id, "method": classifier.method_name, "clauses": results}
     with open(cache_path, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False)

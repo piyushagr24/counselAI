@@ -16,4 +16,10 @@ async def get_clauses(
 ) -> ClausesResponse:
     verify_contract_access(contract_id, current_user["id"])
     result = classify_contract(contract_id, force=force)
+    if "clauses" in result and isinstance(result["clauses"], list):
+        result["clauses"] = sorted(
+            result["clauses"],
+            key=lambda x: x.get("confidence", 0),
+            reverse=True,
+        )
     return ClausesResponse(**result)

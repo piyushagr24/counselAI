@@ -13,13 +13,11 @@ export default function RiskCard({ risk }: { risk: RiskFinding }) {
   };
 
   const severityBorder =
-    risk.severity === "Critical"
+    risk.severity === "Critical" || risk.severity === "High"
       ? "border-l-4 border-l-red-600"
-      : risk.severity === "High"
-      ? "border-l-4 border-l-risk-high"
       : risk.severity === "Medium"
-      ? "border-l-4 border-l-risk-medium"
-      : "border-l-4 border-l-risk-low";
+      ? "border-l-4 border-l-amber-500"
+      : "border-l-4 border-l-emerald-600";
 
   return (
     <div className={`rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-all ${severityBorder}`}>

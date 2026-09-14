@@ -23,6 +23,7 @@ import {
   Search,
   CheckCircle2,
   ChevronDown,
+  X,
 } from "lucide-react";
 import RiskCard from "../components/RiskCard";
 import ClauseCard from "../components/ClauseCard";
@@ -81,6 +82,9 @@ export default function ContractAnalysisPage() {
   // Filter states
   const [clauseCategory, setClauseCategory] = useState("all");
   const [clauseQuery, setClauseQuery] = useState("");
+  const [riskSeverity, setRiskSeverity] = useState("all");
+  const [riskCategory, setRiskCategory] = useState("all");
+  const [riskQuery, setRiskQuery] = useState("");
   const [obligationParty, setObligationParty] = useState("all");
   const [obligationPriority, setObligationPriority] = useState("all");
   const [obligationQuery, setObligationQuery] = useState("");
@@ -215,16 +219,16 @@ export default function ContractAnalysisPage() {
         setLoadedTabs((prev) => ({ ...prev, summary: true }));
       } else if (tab === "clauses") {
         const res = await getClauses(id, force);
-        setClauses(
-          (res.clauses || []).map((c) => ({
-            chunkIndex: c.chunk_index,
-            pageNumber: c.page_number,
-            heading: c.heading,
-            text: c.text,
-            category: c.category,
-            confidence: c.confidence,
-          }))
-        );
+        const mappedClauses = (res.clauses || []).map((c) => ({
+          chunkIndex: c.chunk_index,
+          pageNumber: c.page_number,
+          heading: c.heading,
+          text: c.text,
+          category: c.category,
+          confidence: c.confidence,
+        }));
+        mappedClauses.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+        setClauses(mappedClauses);
         setContract((prev) => (prev && !prev.has_clauses ? { ...prev, has_clauses: true } : prev));
         setLoadedTabs((prev) => ({ ...prev, clauses: true }));
       } else if (tab === "risks") {
@@ -478,15 +482,38 @@ export default function ContractAnalysisPage() {
 
   if (!contract) return <LoadingState />;
 
-  // Clause categories
+  // Clause categories & sorting
   const clauseCategories = ["all", ...Array.from(new Set(clauses.map((c) => c.category))).filter(Boolean)];
-  const filteredClauses = clauses.filter((c) => {
-    const matchesCat = clauseCategory === "all" || c.category === clauseCategory;
-    const matchesText =
-      clauseQuery === "" ||
-      c.text.toLowerCase().includes(clauseQuery.toLowerCase()) ||
-      (c.heading && c.heading.toLowerCase().includes(clauseQuery.toLowerCase()));
-    return matchesCat && matchesText;
+  const filteredClauses = clauses
+    .filter((c) => {
+      const matchesCat = clauseCategory === "all" || c.category === clauseCategory;
+      const matchesText =
+        clauseQuery === "" ||
+        c.text.toLowerCase().includes(clauseQuery.toLowerCase()) ||
+        (c.heading && c.heading.toLowerCase().includes(clauseQuery.toLowerCase()));
+      return matchesCat && matchesText;
+    })
+    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+
+  // Risk filters
+  const riskCategories = ["all", ...Array.from(new Set(risks.map((r) => r.category))).filter(Boolean) as string[]];
+  const filteredRisks = risks.filter((r) => {
+    const matchesSeverity =
+      riskSeverity === "all" ||
+      (riskSeverity === "High"
+        ? r.severity === "High" || r.severity === "Critical"
+        : r.severity?.toLowerCase() === riskSeverity.toLowerCase());
+    const matchesCat = riskCategory === "all" || r.category === riskCategory;
+    const q = riskQuery.trim().toLowerCase();
+    const matchesQuery =
+      q === "" ||
+      r.title.toLowerCase().includes(q) ||
+      r.explanation.toLowerCase().includes(q) ||
+      (r.evidence && r.evidence.toLowerCase().includes(q)) ||
+      (r.recommendation && r.recommendation.toLowerCase().includes(q)) ||
+      (r.category && r.category.toLowerCase().includes(q)) ||
+      (r.section && r.section.toLowerCase().includes(q));
+    return matchesSeverity && matchesCat && matchesQuery;
   });
 
   // Obligation filters
@@ -787,8 +814,9 @@ export default function ContractAnalysisPage() {
               </div>
             </div>
 
-            <div className="text-xs text-slate-500 font-medium px-1">
-              Showing {filteredClauses.length} of {clauses.length} clauses
+            <div className="flex items-center justify-between text-xs text-slate-500 font-medium px-1">
+              <span>Showing {filteredClauses.length} of {clauses.length} clauses</span>
+              <span className="text-[11px] text-slate-400">Sorted by confidence (highest first)</span>
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -831,7 +859,142 @@ export default function ContractAnalysisPage() {
                 <span>Auditing risks & liabilities with Counsel AI…</span>
               </div>
             )}
-            {risks.map((risk) => <RiskCard key={risk.id} risk={risk} />)}
+
+            {/* Risk Filters Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
+              <div className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 sm:max-w-xs focus-within:border-accent-600 focus-within:bg-white">
+                <Search size={14} className="text-slate-400" />
+                <input
+                  type="text"
+                  value={riskQuery}
+                  onChange={(e) => setRiskQuery(e.target.value)}
+                  placeholder="Filter risks by keyword or clause…"
+                  className="w-full bg-transparent text-xs outline-none placeholder:text-slate-400"
+                />
+                {riskQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setRiskQuery("")}
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                {/* Severity Quick Filter Pills with Universal Red-Yellow-Green Dots */}
+                <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setRiskSeverity("all")}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                      riskSeverity === "all"
+                        ? "bg-white text-ink-900 shadow-2xs font-semibold"
+                        : "text-slate-600 hover:text-ink-900"
+                    }`}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRiskSeverity("High")}
+                    className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                      riskSeverity === "High"
+                        ? "bg-red-50 text-red-700 font-semibold shadow-2xs border border-red-200"
+                        : "text-slate-600 hover:text-red-700"
+                    }`}
+                    title="High & Critical Risks"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-red-600" />
+                    High
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRiskSeverity("Medium")}
+                    className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                      riskSeverity === "Medium"
+                        ? "bg-amber-50 text-amber-800 font-semibold shadow-2xs border border-amber-300"
+                        : "text-slate-600 hover:text-amber-700"
+                    }`}
+                    title="Medium Risks"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    Medium
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRiskSeverity("Low")}
+                    className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                      riskSeverity === "Low"
+                        ? "bg-emerald-50 text-emerald-700 font-semibold shadow-2xs border border-emerald-200"
+                        : "text-slate-600 hover:text-emerald-700"
+                    }`}
+                    title="Low Risks"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-emerald-600" />
+                    Low
+                  </button>
+                </div>
+
+                {/* Category Dropdown */}
+                {riskCategories.length > 2 && (
+                  <select
+                    value={riskCategory}
+                    onChange={(e) => setRiskCategory(e.target.value)}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none"
+                  >
+                    <option value="all">All Categories</option>
+                    {riskCategories.filter((c) => c !== "all").map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {/* Filter status & counter */}
+            <div className="flex items-center justify-between text-xs text-slate-500 font-medium px-1">
+              <span>Showing {filteredRisks.length} of {risks.length} risk findings</span>
+              {(riskQuery || riskSeverity !== "all" || riskCategory !== "all") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRiskQuery("");
+                    setRiskSeverity("all");
+                    setRiskCategory("all");
+                  }}
+                  className="text-xs font-semibold text-accent-600 hover:text-accent-700 underline cursor-pointer"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            {filteredRisks.length > 0 ? (
+              filteredRisks.map((risk) => <RiskCard key={risk.id} risk={risk} />)
+            ) : (
+              <EmptyState
+                icon={ShieldAlert}
+                title="No risks matching filter"
+                description="Try adjusting your keyword search, severity filter, or category."
+                action={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setRiskQuery("");
+                      setRiskSeverity("all");
+                      setRiskCategory("all");
+                    }}
+                  >
+                    Reset Filters
+                  </Button>
+                }
+              />
+            )}
           </div>
         ) : tabLoading.risks ? (
           <LoadingState label={getLoadingLabel("risks")} />
@@ -1267,12 +1430,12 @@ function ObligationsView({ obligations }: { obligations: Obligation[] }) {
                 </td>
                 <td className="px-4 py-3">
                   <span
-                    className={`rounded-md px-2 py-0.5 text-xs font-semibold ${
+                    className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
                       item.priority === "High"
-                        ? "bg-risk-high/10 text-risk-high"
+                        ? "bg-red-50 text-red-700 border-red-200"
                         : item.priority === "Medium"
-                        ? "bg-amber-100 text-amber-800"
-                        : "bg-slate-100 text-slate-600"
+                        ? "bg-amber-50 text-amber-800 border-amber-300"
+                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
                     }`}
                   >
                     {item.priority ?? "Standard"}
@@ -1336,15 +1499,17 @@ function SummaryBlock({ icon: Icon, title, children }: { icon: typeof Users; tit
 }
 
 function RiskBadge({ severity }: { severity: string }) {
-  const styles: Record<string, string> = {
-    Low: "bg-risk-low/10 text-risk-low border-risk-low/20",
-    Medium: "bg-amber-100 text-amber-800 border-amber-200",
-    High: "bg-risk-high/10 text-risk-high border-risk-high/20",
-    Critical: "bg-red-100 text-red-700 border-red-200",
+  const styles: Record<string, { badge: string; iconColor: string }> = {
+    Critical: { badge: "bg-red-50 text-red-700 border-red-200", iconColor: "text-red-600" },
+    High: { badge: "bg-red-50 text-red-700 border-red-200", iconColor: "text-red-600" },
+    Medium: { badge: "bg-amber-50 text-amber-800 border-amber-300", iconColor: "text-amber-600" },
+    Low: { badge: "bg-emerald-50 text-emerald-700 border-emerald-200", iconColor: "text-emerald-600" },
+    Standard: { badge: "bg-emerald-50 text-emerald-700 border-emerald-200", iconColor: "text-emerald-600" },
   };
+  const conf = styles[severity] || styles.Low;
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${styles[severity] || styles.Low}`}>
-      <ShieldAlert size={12} />
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${conf.badge}`}>
+      <ShieldAlert size={12} className={conf.iconColor} />
       {severity} Risk Profile
     </span>
   );

@@ -64,13 +64,13 @@ export const mockSummary: ContractSummary = {
 };
 
 export const mockClauses: Clause[] = [
-  { chunkIndex: 0, pageNumber: 1, heading: null, text: "This Master Supply Agreement (\"Agreement\") is entered into between Northwind Supply Co. and Aster Manufacturing Inc.", category: "Other", confidence: 0.4 },
-  { chunkIndex: 1, pageNumber: 2, heading: null, text: "Client shall pay all undisputed invoices within thirty (30) days of receipt. Amounts unpaid after the due date accrue interest at 1.5% per month.", category: "Payment", confidence: 0.93 },
   { chunkIndex: 2, pageNumber: 3, heading: null, text: "Each party agrees to hold the other's confidential information in strict confidence and not disclose it to any third party without prior written consent.", category: "Confidentiality", confidence: 0.97 },
-  { chunkIndex: 3, pageNumber: 5, heading: null, text: "Supplier shall indemnify, defend, and hold harmless Client from any and all claims, damages, and liabilities arising from Supplier's performance under this Agreement, without limitation.", category: "Indemnification", confidence: 0.91 },
-  { chunkIndex: 4, pageNumber: 6, heading: null, text: "Client may terminate this Agreement at any time, for any reason, upon fifteen (15) days' written notice. Supplier may only terminate for uncured material breach.", category: "Termination", confidence: 0.95 },
-  { chunkIndex: 5, pageNumber: 9, heading: null, text: "All intellectual property developed by Supplier in the course of performing services shall be the sole and exclusive property of Client.", category: "Intellectual Property", confidence: 0.89 },
   { chunkIndex: 6, pageNumber: 11, heading: null, text: "This Agreement shall be governed by and construed in accordance with the laws of the State of Delaware.", category: "Governing Law", confidence: 0.96 },
+  { chunkIndex: 4, pageNumber: 6, heading: null, text: "Client may terminate this Agreement at any time, for any reason, upon fifteen (15) days' written notice. Supplier may only terminate for uncured material breach.", category: "Termination", confidence: 0.95 },
+  { chunkIndex: 1, pageNumber: 2, heading: null, text: "Client shall pay all undisputed invoices within thirty (30) days of receipt. Amounts unpaid after the due date accrue interest at 1.5% per month.", category: "Payment", confidence: 0.93 },
+  { chunkIndex: 3, pageNumber: 5, heading: null, text: "Supplier shall indemnify, defend, and hold harmless Client from any and all claims, damages, and liabilities arising from Supplier's performance under this Agreement, without limitation.", category: "Indemnification", confidence: 0.91 },
+  { chunkIndex: 5, pageNumber: 9, heading: null, text: "All intellectual property developed by Supplier in the course of performing services shall be the sole and exclusive property of Client.", category: "Intellectual Property", confidence: 0.89 },
+  { chunkIndex: 0, pageNumber: 1, heading: null, text: "This Master Supply Agreement (\"Agreement\") is entered into between Northwind Supply Co. and Aster Manufacturing Inc.", category: "Other", confidence: 0.4 },
 ];
 
 export const mockRisks: RiskFinding[] = [

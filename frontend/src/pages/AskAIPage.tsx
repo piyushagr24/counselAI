@@ -214,10 +214,10 @@ export default function AskAIPage() {
           <div className="flex-1 space-y-4 overflow-y-auto p-6">
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center px-4">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-50 text-accent-600 mb-3">
-                  {isGeneralMode ? <Scale size={24} /> : <FileText size={24} />}
+                <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-50 text-accent-600 mb-3.5 shadow-2xs border border-accent-100/60">
+                  <Scale size={28} strokeWidth={2.2} />
                 </span>
-                <h3 className="font-medium text-ink-900">
+                <h3 className="text-lg font-semibold text-ink-900">
                   {isGeneralMode ? "Legal AI Copilot" : "Contract AI Copilot"}
                 </h3>
                 <p className="mt-1 max-w-md text-xs text-slate-500">

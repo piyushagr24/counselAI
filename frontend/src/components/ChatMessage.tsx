@@ -101,7 +101,7 @@ function renderCellContent(content: string): React.ReactNode {
       </span>
     );
   }
-  if (lower === "low") {
+  if (lower === "low" || lower === "standard") {
     return (
       <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200 shadow-2xs">
         {trimmed}

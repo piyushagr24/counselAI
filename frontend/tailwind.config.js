@@ -24,10 +24,10 @@ export default {
           200: "#E4E7EC",
         },
         risk: {
-          critical: "#7F1D1D",
-          high: "#B91C1C",
-          medium: "#B45309",
-          low: "#15803D",
+          critical: "#B91C1C",
+          high: "#DC2626",
+          medium: "#D97706",
+          low: "#16A34A",
         },
       },
       fontFamily: {

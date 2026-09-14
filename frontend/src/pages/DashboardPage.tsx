@@ -535,10 +535,12 @@ export default function DashboardPage() {
                               )}
                               {ob.priority && (
                                 <span
-                                  className={`rounded px-1.5 py-0.2 text-[10px] font-medium ${
+                                  className={`rounded border px-1.5 py-0.2 text-[10px] font-semibold ${
                                     ob.priority === "High"
-                                      ? "bg-risk-high/10 text-risk-high"
-                                      : "bg-slate-100 text-slate-600"
+                                      ? "bg-red-50 text-red-700 border-red-200"
+                                      : ob.priority === "Medium"
+                                      ? "bg-amber-50 text-amber-800 border-amber-300"
+                                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
                                   }`}
                                 >
                                   {ob.priority} Priority
@@ -679,11 +681,11 @@ export default function DashboardPage() {
                       <div className="flex items-start justify-between gap-1.5">
                         <span
                           className={`rounded px-1.5 py-0.2 text-[10px] font-bold ${
-                            risk.severity === "Critical"
-                              ? "bg-risk-critical text-white"
-                              : risk.severity === "High"
-                              ? "bg-risk-high text-white"
-                              : "bg-risk-medium text-white"
+                            risk.severity === "Critical" || risk.severity === "High"
+                              ? "bg-red-600 text-white"
+                              : risk.severity === "Medium"
+                              ? "bg-amber-500 text-white"
+                              : "bg-emerald-600 text-white"
                           }`}
                         >
                           {risk.severity}
