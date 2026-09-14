@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Minus, Pencil, MapPin, Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Minus, Pencil, Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
 import type { ChangeItem } from "../types";
 
 const config = {
@@ -92,30 +92,30 @@ export default function ComparisonResult({
         </button>
       </div>
 
-      {/* Side by side comparison */}
-      <div className="mt-3.5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {/* Version A card */}
-        <div className="flex flex-col rounded-lg border border-slate-200/80 bg-slate-50/50 p-3.5">
-          <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-200/60">
-            <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
-              {labelA} <span className="text-slate-400 font-normal lowercase">(baseline)</span>
+      {/* Side by side comparison (clean typography, no nested boxes) */}
+      <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 md:divide-x md:divide-slate-100">
+        {/* Version A (Baseline) */}
+        <div className="flex flex-col">
+          <div className="flex items-baseline justify-between gap-2 pb-2">
+            <span className="text-xs font-semibold text-slate-700 truncate" title={labelA}>
+              {labelA} <span className="font-normal text-slate-400 lowercase">(baseline)</span>
             </span>
             {change.pageNumberA && (
-              <span className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-500 border border-slate-200">
-                <MapPin size={10} /> p. {change.pageNumberA}
+              <span className="shrink-0 text-xs text-slate-400 font-normal">
+                Page {change.pageNumberA}
               </span>
             )}
           </div>
 
           {change.textA ? (
             <div>
-              <div
-                className={`rounded-md border border-rose-150 bg-rose-50/60 p-3 text-xs sm:text-sm text-slate-800 leading-relaxed font-sans ${
-                  change.changeType === "REMOVED" ? "line-through decoration-rose-400/80 text-rose-950" : ""
+              <p
+                className={`text-sm leading-relaxed text-slate-800 font-sans ${
+                  change.changeType === "REMOVED" ? "line-through decoration-rose-400/80 text-rose-900" : ""
                 } ${!expandedA && isLongA ? "line-clamp-4" : ""}`}
               >
                 {change.textA}
-              </div>
+              </p>
               {isLongA && (
                 <button
                   onClick={() => setExpandedA(!expandedA)}
@@ -134,34 +134,34 @@ export default function ComparisonResult({
               )}
             </div>
           ) : (
-            <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-slate-200 p-4 text-xs italic text-slate-400">
-              Not present in {labelA} (New clause introduced)
-            </div>
+            <p className="text-xs italic text-slate-400 mt-1">
+              Not present in baseline
+            </p>
           )}
         </div>
 
-        {/* Version B card */}
-        <div className="flex flex-col rounded-lg border border-slate-200/80 bg-slate-50/50 p-3.5">
-          <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-200/60">
-            <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
-              {labelB} <span className="text-accent-600 font-normal lowercase">(revised)</span>
+        {/* Version B (Revised) */}
+        <div className="flex flex-col md:pl-6">
+          <div className="flex items-baseline justify-between gap-2 pb-2">
+            <span className="text-xs font-semibold text-accent-700 truncate" title={labelB}>
+              {labelB} <span className="font-normal text-accent-600/80 lowercase">(revised)</span>
             </span>
             {change.pageNumberB && (
-              <span className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-500 border border-slate-200">
-                <MapPin size={10} /> p. {change.pageNumberB}
+              <span className="shrink-0 text-xs text-slate-400 font-normal">
+                Page {change.pageNumberB}
               </span>
             )}
           </div>
 
           {change.textB ? (
             <div>
-              <div
-                className={`rounded-md border border-emerald-150 bg-emerald-50/60 p-3 text-xs sm:text-sm text-slate-800 leading-relaxed font-sans ${
-                  change.changeType === "ADDED" ? "text-emerald-950 font-medium" : ""
+              <p
+                className={`text-sm leading-relaxed text-slate-800 font-sans ${
+                  change.changeType === "ADDED" ? "font-medium text-emerald-900" : ""
                 } ${!expandedB && isLongB ? "line-clamp-4" : ""}`}
               >
                 {change.textB}
-              </div>
+              </p>
               {isLongB && (
                 <button
                   onClick={() => setExpandedB(!expandedB)}
@@ -180,9 +180,9 @@ export default function ComparisonResult({
               )}
             </div>
           ) : (
-            <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-slate-200 p-4 text-xs italic text-slate-400">
-              Omitted in {labelB} (Clause removed)
-            </div>
+            <p className="text-xs italic text-slate-400 mt-1">
+              Omitted in revised
+            </p>
           )}
         </div>
       </div>
