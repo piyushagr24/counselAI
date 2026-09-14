@@ -26,29 +26,41 @@ CLAUSE_CATEGORIES = [
     "Payment",
     "Confidentiality",
     "Termination",
+    "Term & Renewal",
     "Intellectual Property",
     "Liability",
-    "Arbitration",
-    "Warranty",
     "Indemnification",
+    "Warranty & Representations",
+    "Dispute Resolution & Arbitration",
+    "Governing Law",
+    "Scope of Work & Deliverables",
+    "Assignment & Transfer",
     "Non-compete",
     "Non-solicitation",
-    "Governing Law",
+    "Force Majeure",
+    "Notice & Communications",
+    "General Provisions & Boilerplate",
     "Other",
 ]
 
 _KEYWORD_MAP = {
-    "Payment": ["payment", "invoice", "fee", "compensation"],
-    "Confidentiality": ["confidential", "non-disclosure", "proprietary information"],
-    "Termination": ["terminat", "expiration of this agreement"],
-    "Intellectual Property": ["intellectual property", "copyright", "patent", "trademark"],
-    "Liability": ["limitation of liability", "liable", "damages"],
-    "Arbitration": ["arbitration", "arbitrator", "dispute resolution"],
-    "Warranty": ["warrant", "representations and warranties"],
-    "Indemnification": ["indemnify", "indemnification", "hold harmless"],
-    "Non-compete": ["non-compete", "noncompete", "restraint of trade"],
+    "Payment": ["payment", "invoice", "fee", "compensation", "rent", "deposit"],
+    "Confidentiality": ["confidential", "non-disclosure", "proprietary information", "trade secret"],
+    "Termination": ["terminat", "cancellation", "breach", "cur", "default"],
+    "Term & Renewal": ["term of", "renewal", "lock-in", "duration", "effective date", "expiration"],
+    "Intellectual Property": ["intellectual property", "copyright", "patent", "trademark", "license", "proprietary right"],
+    "Liability": ["limitation of liability", "liable", "damages", "consequential"],
+    "Indemnification": ["indemnify", "indemnification", "hold harmless", "defense"],
+    "Warranty & Representations": ["warrant", "representations", "covenants", "authority", "quiet enjoyment"],
+    "Dispute Resolution & Arbitration": ["arbitration", "arbitrator", "dispute resolution", "mediation", "tribunal"],
+    "Governing Law": ["governing law", "governed by the laws", "jurisdiction", "venue", "courts of"],
+    "Scope of Work & Deliverables": ["services", "deliverables", "obligations", "demised premises", "permitted use", "repair"],
+    "Assignment & Transfer": ["assignment", "sublet", "sublease", "transfer", "assign"],
+    "Non-compete": ["non-compete", "noncompete", "restraint of trade", "exclusivity"],
     "Non-solicitation": ["non-solicitation", "solicit"],
-    "Governing Law": ["governing law", "governed by the laws", "jurisdiction", "venue"],
+    "Force Majeure": ["force majeure", "act of god", "uncontrollable"],
+    "Notice & Communications": ["notices", "written notice", "registered post", "addressed to"],
+    "General Provisions & Boilerplate": ["entire agreement", "severability", "counterparts", "witnesseth", "whereas", "amendment"],
 }
 
 
@@ -111,24 +123,34 @@ class LLMClauseClassifier(ClauseClassifier):
             user_prompt = "\n\n".join(prompt_items)
 
             system_prompt = (
-                "You are an expert legal AI assistant. Classify each numbered contract excerpt into EXACTLY one of the following legal clause categories:\n"
-                "- Payment\n"
-                "- Confidentiality\n"
-                "- Termination\n"
-                "- Intellectual Property\n"
-                "- Liability\n"
-                "- Arbitration\n"
-                "- Warranty\n"
-                "- Indemnification\n"
-                "- Non-compete\n"
-                "- Non-solicitation\n"
-                "- Governing Law\n"
-                "- Other\n\n"
+                "You are an expert legal AI assistant. Classify each numbered contract excerpt into its most appropriate legal category:\n"
+                "- Payment (fees, invoices, billing, compensation, rent, deposits)\n"
+                "- Confidentiality (non-disclosure, proprietary data, trade secrets)\n"
+                "- Termination (cancellation, breach termination, exit rights)\n"
+                "- Term & Renewal (contract duration, effective date, renewal options, lock-in period)\n"
+                "- Intellectual Property (patents, copyrights, trademarks, licensing, ownership of work)\n"
+                "- Liability (limitation of liability, damages caps, consequential damage waivers)\n"
+                "- Indemnification (indemnify, hold harmless, defense against third-party claims)\n"
+                "- Warranty & Representations (authority, service quality, condition, fitness, covenants)\n"
+                "- Dispute Resolution & Arbitration (arbitration, mediation, jurisdiction, dispute escalation)\n"
+                "- Governing Law (choice of law, governing jurisdiction, venue)\n"
+                "- Scope of Work & Deliverables (services provided, duties, permitted use, maintenance, obligations)\n"
+                "- Assignment & Transfer (subletting, assignment, change of control, transfer rights)\n"
+                "- Non-compete (covenants not to compete, restraint of trade)\n"
+                "- Non-solicitation (non-solicitation of personnel, customers, or contractors)\n"
+                "- Force Majeure (acts of God, excused delays, uncontrollable events)\n"
+                "- Notice & Communications (formal written notice procedures, addresses)\n"
+                "- General Provisions & Boilerplate (entire agreement, severability, amendments, recitals, waivers)\n"
+                "- Other (ONLY for purely non-operative text such as isolated page numbers, table of contents, or empty signature lines)\n\n"
+                "CRITICAL RULES:\n"
+                "1. Choose the BEST and MOST ACCURATE legal category for each excerpt.\n"
+                "2. DO NOT classify substantive contract provisions, covenants, terms, or conditions as 'Other'.\n"
+                "3. Use 'Other' ONLY for non-contractual text (e.g. document titles, page headers, signature labels).\n\n"
                 "Return a JSON array of objects with the following schema:\n"
                 "[\n"
-                "  {\"index\": 1, \"category\": \"<Category Name>\", \"confidence\": <float between 0.70 and 0.99>}\n"
+                "  {\"index\": 1, \"category\": \"<Category Name>\", \"confidence\": <float between 0.75 and 0.99>}\n"
                 "]\n"
-                "Respond ONLY with valid JSON array. Do not include introductory text or explanations."
+                "Respond ONLY with a valid JSON array. Do not include introductory text or explanations."
             )
 
             try:
