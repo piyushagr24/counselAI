@@ -75,7 +75,7 @@ export default function AskAIPage() {
     setError(null);
   };
 
-  const send = async (customPrompt?: string) => {
+  const send = async (customPrompt?: string, customHistory?: ChatMessageData[]) => {
     const question = (customPrompt || draft).trim();
     if (!question) return;
     setDraft("");
@@ -86,8 +86,8 @@ export default function AskAIPage() {
       text: question,
     };
 
-    const currentHistory = conversations[selectedContract] ?? [];
-    const updatedMessages = [...currentHistory, userMessage];
+    const baseHistory = customHistory !== undefined ? customHistory : (conversations[selectedContract] ?? []);
+    const updatedMessages = [...baseHistory, userMessage];
 
     setConversations((prev) => ({
       ...prev,
@@ -98,7 +98,7 @@ export default function AskAIPage() {
 
     try {
       // Send up to 20 past messages for multi-turn conversational memory
-      const historyPayload = currentHistory.slice(-20).map((m) => ({
+      const historyPayload = baseHistory.slice(-20).map((m) => ({
         role: m.role,
         content: m.text,
       }));
@@ -128,6 +128,23 @@ export default function AskAIPage() {
     }
   };
 
+  const handleReanswer = async (assistantMsg: ChatMessageData) => {
+    const currentHistory = conversations[selectedContract] ?? [];
+    const idx = currentHistory.findIndex((m) => m.id === assistantMsg.id);
+    if (idx <= 0) return;
+    const precedingUserMsg = currentHistory[idx - 1];
+    if (!precedingUserMsg || precedingUserMsg.role !== "user") return;
+
+    // Rollback history to before this Q&A pair and re-send
+    const historyBefore = currentHistory.slice(0, idx - 1);
+    setConversations((prev) => ({
+      ...prev,
+      [selectedContract]: historyBefore,
+    }));
+
+    await send(precedingUserMsg.text, historyBefore);
+  };
+
   const isGeneralMode = selectedContract === GENERAL_ID;
   const currentContractObj = contracts.find((c) => c.contract_id === selectedContract);
   const suggestions = isGeneralMode ? GENERAL_SUGGESTIONS : CONTRACT_SUGGESTIONS;
@@ -142,7 +159,7 @@ export default function AskAIPage() {
               onChange={(e) => setSelectedContract(e.target.value)}
               className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm font-medium text-ink-900 outline-none shadow-sm cursor-pointer hover:border-slate-300 transition-colors"
             >
-              <option value={GENERAL_ID}>⚖️ General Legal Assistant (Ask Anything)</option>
+              <option value={GENERAL_ID}>⚖️ Legal AI Copilot (General Consultation)</option>
               {contracts.length > 0 && (
                 <optgroup label="Uploaded Contracts">
                   {contracts.map((contract) => (
@@ -201,7 +218,7 @@ export default function AskAIPage() {
                   {isGeneralMode ? <Scale size={24} /> : <FileText size={24} />}
                 </span>
                 <h3 className="font-medium text-ink-900">
-                  {isGeneralMode ? "Counsel AI Legal Assistant" : "Counsel AI Contract Consultation"}
+                  {isGeneralMode ? "Legal AI Copilot" : "Contract AI Copilot"}
                 </h3>
                 <p className="mt-1 max-w-md text-xs text-slate-500">
                   {isGeneralMode
@@ -222,9 +239,16 @@ export default function AskAIPage() {
                 </div>
               </div>
             ) : (
-              messages.map((message) => <ChatMessage key={message.id} message={message} />)
+              messages.map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  onReanswer={handleReanswer}
+                  isBusy={loading}
+                />
+              ))
             )}
-            {loading && <LoadingState label="Counsel is thinking…" />}
+            {loading && <LoadingState label="Legal AI Copilot is thinking…" />}
             <div ref={chatBottomRef} />
           </div>
 
@@ -251,7 +275,7 @@ export default function AskAIPage() {
             </div>
             <p className="mt-2 text-xs text-slate-400">
               {isGeneralMode
-                ? "Counsel provides general legal guidance, contract concepts, and conversational assistance."
+                ? "Legal AI Copilot provides general legal guidance, contract concepts, and conversational assistance."
                 : "Answers are grounded in the selected contract with clause and page citations, plus general legal explanations."}
             </p>
           </div>

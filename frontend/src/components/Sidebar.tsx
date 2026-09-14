@@ -2,7 +2,7 @@ import { NavLink, Link } from "react-router-dom";
 import {
   LayoutDashboard,
   FileStack,
-  MessagesSquare,
+  Sparkles,
   GitCompare,
   Scale,
   LogOut,
@@ -13,7 +13,7 @@ import { useAuth } from "../context/AuthContext";
 const navItems = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { to: "/contracts", label: "Contract Vault", icon: FileStack },
-  { to: "/ask-ai", label: "Counsel Q&A", icon: MessagesSquare },
+  { to: "/ask-ai", label: "Ask AI", icon: Sparkles },
   { to: "/compare", label: "Compare Versions", icon: GitCompare },
 ];
 

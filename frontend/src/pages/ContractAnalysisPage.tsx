@@ -22,6 +22,7 @@ import {
   Check,
   Search,
   CheckCircle2,
+  ChevronDown,
 } from "lucide-react";
 import RiskCard from "../components/RiskCard";
 import ClauseCard from "../components/ClauseCard";
@@ -31,6 +32,7 @@ import DisclaimerBanner from "../components/DisclaimerBanner";
 import EmptyState from "../components/EmptyState";
 import { LoadingState } from "../components/LoadingState";
 import Button from "../components/ui/Button";
+import { exportToPdf, exportToDocx, exportToMarkdown } from "../utils/reportExporter";
 import {
   askQuestion,
   deleteContract,
@@ -72,7 +74,9 @@ export default function ContractAnalysisPage() {
   const [forceLoading, setForceLoading] = useState<Partial<Record<Tab, boolean>>>({});
   const [chatLoading, setChatLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [exportedToast, setExportedToast] = useState(false);
+  const [exportedToast, setExportedToast] = useState<string | null>(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"pdf" | "docx" | "md" | null>(null);
 
   // Filter states
   const [clauseCategory, setClauseCategory] = useState("all");
@@ -83,6 +87,7 @@ export default function ContractAnalysisPage() {
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const inFlightRef = useRef<Set<Tab>>(new Set());
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   const isTabCached = (t: Tab, details: ContractDetails | null): boolean => {
     if (!details) return false;
@@ -288,13 +293,14 @@ export default function ContractAnalysisPage() {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, chatLoading]);
 
-  const sendQuestion = async (customText?: string) => {
+  const sendQuestion = async (customText?: string, customHistory?: ChatMessageData[]) => {
     const question = (customText || draft).trim();
     if (!question || !id) return;
     setDraft("");
 
+    const baseHistory = customHistory !== undefined ? customHistory : messages;
     const newMessages: ChatMessageData[] = [
-      ...messages,
+      ...baseHistory,
       { id: `${Date.now()}-q`, role: "user", text: question },
     ];
     setMessages(newMessages);
@@ -302,7 +308,7 @@ export default function ContractAnalysisPage() {
     setError(null);
 
     try {
-      const historyPayload = messages.slice(-20).map((m) => ({
+      const historyPayload = baseHistory.slice(-20).map((m) => ({
         role: m.role,
         content: m.text,
       }));
@@ -328,6 +334,18 @@ export default function ContractAnalysisPage() {
     } finally {
       setChatLoading(false);
     }
+  };
+
+  const handleReanswer = async (assistantMsg: ChatMessageData) => {
+    const idx = messages.findIndex((m) => m.id === assistantMsg.id);
+    if (idx <= 0) return;
+    const precedingUserMsg = messages[idx - 1];
+    if (!precedingUserMsg || precedingUserMsg.role !== "user") return;
+
+    // Rollback history to before this Q&A pair and re-send
+    const historyBefore = messages.slice(0, idx - 1);
+    setMessages(historyBefore);
+    await sendQuestion(precedingUserMsg.text, historyBefore);
   };
 
   const handleDeleteContract = async () => {
@@ -481,7 +499,7 @@ export default function ContractAnalysisPage() {
     { key: "risks" as Tab, label: "Risks", count: risks.length || null, alert: risks.some((r) => r.severity === "High" || r.severity === "Critical") },
     { key: "obligations" as Tab, label: "Obligations", count: obligations.length || null },
     { key: "deadlines" as Tab, label: "Deadlines", count: deadlinesCount || null },
-    { key: "ask" as Tab, label: "Counsel Q&A", count: messages.length || null },
+    { key: "ask" as Tab, label: "Ask AI", count: messages.length || null },
   ];
 
   return (
@@ -849,14 +867,14 @@ export default function ContractAnalysisPage() {
         )
       )}
 
-      {/* Tab: Counsel Q&A */}
+      {/* Tab: Ask AI */}
       {activeTab === "ask" && (
         <div className="flex h-[620px] flex-col rounded-2xl border border-slate-200 bg-white shadow-card overflow-hidden">
           <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles size={16} className="text-accent-600" />
               <span className="text-xs font-semibold text-ink-900 uppercase tracking-wider">
-                Counsel Legal Assistant
+                Legal AI Copilot
               </span>
             </div>
             <span className="text-xs text-slate-400">Grounded strictly in {contract.filename}</span>
@@ -869,10 +887,10 @@ export default function ContractAnalysisPage() {
                   <Scale size={24} />
                 </span>
                 <h3 className="font-serif text-base font-semibold text-ink-900">
-                  Ask Counsel anything about this contract
+                  Ask AI anything about this contract
                 </h3>
                 <p className="mt-1 max-w-md text-xs text-slate-500 leading-relaxed">
-                  Counsel provides authoritative answers grounded directly in the document text with interactive page citations.
+                  Legal AI Copilot provides authoritative answers grounded directly in the document text with interactive page citations.
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-lg">
                   {SUGGESTED_PROMPTS.map((prompt, i) => (
@@ -887,12 +905,19 @@ export default function ContractAnalysisPage() {
                 </div>
               </div>
             ) : (
-              messages.map((message) => <ChatMessage key={message.id} message={message} />)
+              messages.map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  onReanswer={handleReanswer}
+                  isBusy={chatLoading}
+                />
+              ))
             )}
             {chatLoading && (
               <div className="flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600 animate-pulse w-fit">
                 <Sparkles size={14} className="animate-spin text-accent-600" />
-                <span>Counsel is reviewing contract text…</span>
+                <span>Legal AI Copilot is reviewing contract text…</span>
               </div>
             )}
             <div ref={chatBottomRef} />

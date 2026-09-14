@@ -21,7 +21,7 @@ import type { ContractMetadata } from "../types";
 const titles: Record<string, string> = {
   "/dashboard": "Overview",
   "/contracts": "Contracts",
-  "/ask-ai": "Counsel Legal Q&A",
+  "/ask-ai": "Ask AI",
   "/compare": "Compare Contracts",
 };
 

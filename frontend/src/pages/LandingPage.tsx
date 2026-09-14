@@ -594,7 +594,7 @@ export default function LandingPage() {
             <div className="flex flex-wrap items-center gap-6 text-xs text-slate-500 font-medium">
               <Link to="/dashboard" className="hover:text-ink-900 transition-colors">Overview</Link>
               <Link to="/contracts" className="hover:text-ink-900 transition-colors">Contract Vault</Link>
-              <Link to="/ask-ai" className="hover:text-ink-900 transition-colors">Counsel Q&A</Link>
+              <Link to="/ask-ai" className="hover:text-ink-900 transition-colors">Ask AI</Link>
               <Link to="/compare" className="hover:text-ink-900 transition-colors">Compare Contracts</Link>
               <Link to="/login" className="hover:text-ink-900 transition-colors">Sign In</Link>
             </div>
