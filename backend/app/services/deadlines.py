@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.models.schemas import DeadlinesSummary, DateItem
-from app.services.extraction_batching import atomize_segments, pack_batches, label_batch
+from app.services.extraction_batching import atomize_segments, pack_batches, label_batch, resolve_item_location
 from app.services.llm_client import generate_answer
 from app.utils.json_parsing import parse_json_loose
 
@@ -26,7 +26,8 @@ SYSTEM_PROMPT = (
     "dates, timeframes, and deadline milestones for: contract start/effective date, contract end/expiration date, "
     "renewal date or window, termination notice period, breach cure period, payment deadlines, "
     "delivery deadlines, and any other critical milestones. Use ONLY what is explicitly stated in the excerpts — "
-    "never invent a date. Use each excerpt's page/section label to fill 'page_number'. "
+    "never invent a date. Use ONLY the 'Page: X' tag in each excerpt header to fill 'page_number' (as an integer). "
+    "NEVER use the Excerpt number (e.g. Excerpt 4) as the page number. "
     "If a field has no information in these excerpts, use null for single-value fields or an "
     "empty array for list fields. Respond with ONLY valid JSON matching this shape:\n"
     '{"contract_start_date": string|null, "contract_end_date": string|null, '
@@ -99,11 +100,23 @@ def extract_deadlines(contract_id: str, force: bool = False) -> Dict[str, Any]:
     if not units:
         raise HTTPException(status_code=422, detail="No contract text available to analyze.")
 
+    total_pages = extraction.get("metadata", {}).get("num_pages")
     merged = DeadlinesSummary()
     batches = pack_batches(units, MAX_BATCH_CHARS)
     for batch in batches:
         raw = generate_answer(SYSTEM_PROMPT, label_batch(batch), max_tokens=800)
-        merged = _merge(merged, _parse_batch_response(raw))
+        batch_summary = _parse_batch_response(raw)
+        for lst in (batch_summary.payment_deadlines, batch_summary.delivery_deadlines, batch_summary.other_dates):
+            for item in lst:
+                p_num, _ = resolve_item_location(
+                    item_page=item.page_number,
+                    item_section=None,
+                    text_snippet=f"{item.description} {item.date_or_timeframe or ''}",
+                    batch=batch,
+                    total_pages=total_pages,
+                )
+                item.page_number = p_num
+        merged = _merge(merged, batch_summary)
         if len(batches) > 1:
             time.sleep(0.35)  # subtle pacing delay to respect Groq OTPM/RPM limits
 

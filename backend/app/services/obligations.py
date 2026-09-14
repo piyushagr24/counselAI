@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.models.schemas import Obligation
-from app.services.extraction_batching import atomize_segments, pack_batches, label_batch
+from app.services.extraction_batching import atomize_segments, pack_batches, label_batch, resolve_item_location
 from app.services.llm_client import generate_answer
 from app.utils.json_parsing import extract_list_loose
 
@@ -22,7 +22,8 @@ MAX_BATCH_CHARS = 7000
 SYSTEM_PROMPT = (
     "You are an expert contract analyst. From the contract excerpts below, extract every "
     "distinct legal obligation — an explicit required duty or action by a party. "
-    "Use each excerpt's page/section label to fill 'page_number' (integer, or null) and 'section' (heading text, or null). "
+    "Use ONLY the 'Page: X' tag in each excerpt header to fill 'page_number' (as an integer). "
+    "NEVER use the Excerpt number (e.g. Excerpt 4) as the page number. Use the 'Section:' tag if present to fill 'section'. "
     "Classify each obligation into 'category' (one of: 'Payment', 'Delivery', 'Confidentiality', 'Compliance', 'Reporting', 'Termination', 'Intellectual Property', 'General') "
     "and 'priority' (one of: 'High', 'Medium', 'Standard'). "
     "Use ONLY information explicitly stated in the excerpts — never invent a responsible party, action, or deadline. "
@@ -84,11 +85,24 @@ def extract_obligations(contract_id: str, force: bool = False) -> Dict[str, Any]
     if not units:
         raise HTTPException(status_code=422, detail="No contract text available to analyze.")
 
+    total_pages = extraction.get("metadata", {}).get("num_pages")
     all_obligations: List[Obligation] = []
     batches = pack_batches(units, MAX_BATCH_CHARS)
     for batch in batches:
         raw = generate_answer(SYSTEM_PROMPT, label_batch(batch), max_tokens=1000)
-        all_obligations.extend(_parse_batch_response(raw))
+        batch_items = _parse_batch_response(raw)
+        for ob in batch_items:
+            resolved_page, resolved_sec = resolve_item_location(
+                item_page=ob.page_number,
+                item_section=ob.section,
+                text_snippet=ob.obligation,
+                batch=batch,
+                total_pages=total_pages,
+            )
+            ob.page_number = resolved_page
+            if resolved_sec:
+                ob.section = resolved_sec
+        all_obligations.extend(batch_items)
         if len(batches) > 1:
             time.sleep(0.35)  # subtle pacing delay to respect Groq OTPM/RPM limits
 

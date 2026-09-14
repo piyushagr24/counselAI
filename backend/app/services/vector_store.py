@@ -52,8 +52,7 @@ def add_chunks(contract_id: str, chunks: List[Dict[str, Any]]) -> int:
         {
             "contract_id": contract_id,
             "chunk_index": i,
-            # Chroma metadata can't store None -> use -1 sentinel for "no page" (DOCX)
-            "page_number": c["page_number"] if c.get("page_number") is not None else -1,
+            "page_number": c["page_number"] if c.get("page_number") and c.get("page_number") > 0 else 1,
             "heading": c.get("heading") or "",
         }
         for i, c in enumerate(chunks)
@@ -88,7 +87,7 @@ def query_chunks(query_text: str, contract_id: Optional[str] = None, top_k: int 
         def similarity(record: dict) -> float:
             return sum(a * b for a, b in zip(query_embedding, record["embedding"]))
         records.sort(key=similarity, reverse=True)
-        return [{"text": record["text"], "page_number": record["metadata"].get("page_number") if record["metadata"].get("page_number") != -1 else None, "heading": record["metadata"].get("heading") or None, "contract_id": record["metadata"].get("contract_id"), "chunk_index": record["metadata"].get("chunk_index"), "distance": 1 - similarity(record)} for record in records[:top_k]]
+        return [{"text": record["text"], "page_number": record["metadata"].get("page_number") if record["metadata"].get("page_number") and record["metadata"].get("page_number") > 0 else 1, "heading": record["metadata"].get("heading") or None, "contract_id": record["metadata"].get("contract_id"), "chunk_index": record["metadata"].get("chunk_index"), "distance": 1 - similarity(record)} for record in records[:top_k]]
 
     where = {"contract_id": contract_id} if contract_id else None
     results = collection.query(query_embeddings=[query_embedding], n_results=top_k, where=where)
@@ -102,7 +101,7 @@ def query_chunks(query_text: str, contract_id: Optional[str] = None, top_k: int 
         hits.append(
             {
                 "text": text,
-                "page_number": meta.get("page_number") if meta.get("page_number") != -1 else None,
+                "page_number": meta.get("page_number") if meta.get("page_number") and meta.get("page_number") > 0 else 1,
                 "heading": meta.get("heading") or None,
                 "contract_id": meta.get("contract_id"),
                 "chunk_index": meta.get("chunk_index"),

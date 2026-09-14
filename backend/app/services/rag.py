@@ -19,7 +19,7 @@ SYSTEM_PROMPT = (
     "Core Instructions:\n"
     "1. CONTRACT-SPECIFIC QUERIES:\n"
     "   - When the user asks about the uploaded agreement, ground your answers in the provided <contract_reference> (excerpts and overview).\n"
-    "   - Always cite specific sections, page numbers, and clause headings when referencing document provisions.\n"
+    "   - Always cite specific sections, page numbers (e.g. 'Page 2'), and clause headings when referencing document provisions. Never cite excerpt or chunk numbers as page numbers.\n"
     "   - If the user asks a specific factual question about the uploaded document (e.g. specific dates, prices, parties, or special rights) and that information is genuinely NOT contained in the reference excerpts or overview, clearly state that the provided document does not mention or specify this detail (do not hallucinate terms).\n"
     "2. CONVERSATIONAL MEMORY & FOLLOW-UPS:\n"
     "   - Thoroughly utilize <conversation_history> to understand multi-turn dialogue context.\n"
@@ -69,13 +69,10 @@ def _build_context(chunks: List[Dict[str, Any]], summary_context: str = "") -> s
         parts.append(summary_context)
 
     for i, c in enumerate(chunks, start=1):
-        if c.get("page_number"):
-            loc = f"page {c['page_number']}"
-        elif c.get("heading"):
-            loc = c["heading"]
-        else:
-            loc = f"section {c.get('chunk_index')}"
-        parts.append(f"[Excerpt {i} — {loc}]\n{c['text']}")
+        p_num = c.get("page_number") or 1
+        page_str = f"Page {p_num}"
+        heading_str = f" · {c['heading']}" if c.get("heading") else ""
+        parts.append(f"[Excerpt {i} | {page_str}{heading_str}]\n{c['text']}")
     return "\n\n".join(parts)
 
 
@@ -158,7 +155,7 @@ def answer_question(
 
     sources = [] if not_found else [
         {
-            "page_number": c.get("page_number"),
+            "page_number": c.get("page_number") or 1,
             "heading": c.get("heading"),
             "chunk_index": c.get("chunk_index"),
             "distance": c.get("distance"),

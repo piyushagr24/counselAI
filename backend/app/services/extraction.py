@@ -143,6 +143,7 @@ def extract_docx(path: str) -> dict:
     pending_heading_text = None
     table_count = 0
 
+    raw_segments = []
     # Traverse document body elements to preserve paragraph and table sequence
     for child in document.element.body:
         tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
@@ -162,9 +163,15 @@ def extract_docx(path: str) -> dict:
                 pending_heading_text = text
                 continue
 
-            idx += 1
-            segments.append({"index": idx, "page_number": None, "heading": pending_heading, "text": text})
-            full_text_parts.append(f"{pending_heading_text}\n{text}" if pending_heading_text else text)
+            xml = para._p.xml if hasattr(para, "_p") and para._p is not None else ""
+            has_break = ('lastRenderedPageBreak' in xml) or ('w:type="page"' in xml)
+            raw_segments.append({
+                "heading": pending_heading,
+                "heading_text": pending_heading_text,
+                "text": text,
+                "has_break": has_break,
+                "words": len(text.split()),
+            })
             pending_heading = None
             pending_heading_text = None
 
@@ -173,25 +180,59 @@ def extract_docx(path: str) -> dict:
             tbl = Table(child, document)
             tbl_text = _format_table_as_markdown(tbl)
             if tbl_text:
-                idx += 1
                 heading = pending_heading or "Table"
-                segments.append({"index": idx, "page_number": None, "heading": heading, "text": tbl_text})
-                full_text_parts.append(f"{pending_heading_text}\n{tbl_text}" if pending_heading_text else tbl_text)
+                xml = tbl._tbl.xml if hasattr(tbl, "_tbl") and tbl._tbl is not None else ""
+                has_break = ('lastRenderedPageBreak' in xml) or ('w:type="page"' in xml)
+                raw_segments.append({
+                    "heading": heading,
+                    "heading_text": pending_heading_text,
+                    "text": tbl_text,
+                    "has_break": has_break,
+                    "words": len(tbl_text.split()),
+                })
                 pending_heading = None
                 pending_heading_text = None
 
-    if pending_heading:
-        idx += 1
-        segments.append({"index": idx, "page_number": None, "heading": pending_heading, "text": pending_heading_text or ""})
-        full_text_parts.append(pending_heading_text or "")
+    if pending_heading and pending_heading_text:
+        raw_segments.append({
+            "heading": pending_heading,
+            "heading_text": None,
+            "text": pending_heading_text,
+            "has_break": False,
+            "words": len(pending_heading_text.split()),
+        })
 
+    full_text_parts = [
+        f"{s['heading_text']}\n{s['text']}" if s.get("heading_text") else s["text"]
+        for s in raw_segments
+    ]
     full_text = "\n\n".join(full_text_parts).strip()
 
     if not full_text:
         raise HTTPException(status_code=422, detail="No extractable text found in DOCX.")
 
     words = full_text.split()
-    num_pages = _estimate_docx_pages(path, len(words))
+    total_words = len(words)
+    num_pages = _estimate_docx_pages(path, total_words)
+
+    words_per_page = max(100, math.ceil(total_words / max(1, num_pages)))
+    current_page = 1
+    cum_words = 0
+
+    segments = []
+    for idx, s in enumerate(raw_segments, start=1):
+        if s.get("has_break") and idx > 1:
+            current_page = min(num_pages, current_page + 1)
+        cum_words += s["words"]
+        page_by_words = min(num_pages, max(1, math.ceil(cum_words / words_per_page)))
+        current_page = min(num_pages, max(current_page, page_by_words))
+
+        segments.append({
+            "index": idx,
+            "page_number": current_page,
+            "heading": s["heading"],
+            "text": s["text"],
+        })
 
     metadata = {
         "source_type": "docx",

@@ -40,7 +40,7 @@ def chunk_segments(
             chunks.append(
                 {
                     "text": piece,
-                    "page_number": seg.get("page_number"),
+                    "page_number": seg.get("page_number") or 1,
                     "heading": seg.get("heading"),
                     "source_segment_index": seg.get("index"),
                 }

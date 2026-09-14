@@ -79,15 +79,11 @@ export default function ClauseCard({ clause }: { clause: Clause }) {
       </div>
 
       <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-2.5 text-xs text-slate-400">
-        {clause.pageNumber ? (
-          <div className="flex items-center gap-1">
-            <MapPin size={11} />
-            Page {clause.pageNumber}
-          </div>
-        ) : (
-          <span className="text-[11px] text-slate-400">Section {clause.chunkIndex + 1}</span>
-        )}
-        <span className="text-[10px] text-slate-400">Chunk #{clause.chunkIndex + 1}</span>
+        <div className="flex items-center gap-1 text-slate-600 font-medium">
+          <MapPin size={11} className="text-accent-600" />
+          Page {clause.pageNumber ?? 1}
+        </div>
+        <span className="text-[11px] text-slate-400">Clause #{clause.chunkIndex + 1}</span>
       </div>
     </div>
   );

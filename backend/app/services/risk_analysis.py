@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 from app.models.schemas import RiskFinding
-from app.services.extraction_batching import atomize_segments, pack_batches, label_batch
+from app.services.extraction_batching import atomize_segments, pack_batches, label_batch, resolve_item_location
 from app.services.llm_client import generate_answer
 from app.utils.json_parsing import extract_list_loose
 
@@ -51,7 +51,8 @@ SYSTEM_PROMPT = (
     f"{', '.join(RISK_CATEGORIES)}. "
     "Base every finding strictly on text actually present in the excerpts — never invent a "
     "clause or risk that isn't there. Every finding MUST include a verbatim 'evidence' quote copied from the excerpt. "
-    "Use each excerpt's page/section label to fill 'page_number' (integer or null) and 'section' (heading text or null). "
+    "Use ONLY the 'Page: X' tag in each excerpt header to fill 'page_number' (as an integer). "
+    "NEVER use the Excerpt number (e.g. Excerpt 4) as the page number. Use the 'Section:' tag if present to fill 'section'. "
     "Assign 'severity' as exactly one of 'Low', 'Medium', 'High', 'Critical' based on potential commercial and legal exposure. "
     "Provide an actionable, practical 'recommendation' explaining how to mitigate or renegotiate this risk. "
     "Assign 'category' as one of: 'Financial', 'Operational', 'Legal & Regulatory', 'IP & Data', 'Termination'. "
@@ -167,12 +168,25 @@ def analyze_risks(contract_id: str, force: bool = False) -> Dict[str, Any]:
     if not units:
         raise HTTPException(status_code=422, detail="No contract text available to analyze.")
 
+    total_pages = extraction.get("metadata", {}).get("num_pages")
     analyzer = get_risk_analyzer()
     all_risks: List[Dict[str, Any]] = []
     batches = pack_batches(units, MAX_BATCH_CHARS)
     for batch in batches:
         try:
-            all_risks.extend(analyzer.analyze_batch(label_batch(batch)))
+            batch_risks = analyzer.analyze_batch(label_batch(batch))
+            for r in batch_risks:
+                resolved_page, resolved_sec = resolve_item_location(
+                    item_page=r.get("page_number"),
+                    item_section=r.get("section"),
+                    text_snippet=r.get("evidence", ""),
+                    batch=batch,
+                    total_pages=total_pages,
+                )
+                r["page_number"] = resolved_page
+                if resolved_sec:
+                    r["section"] = resolved_sec
+            all_risks.extend(batch_risks)
         except Exception:
             if not all_risks and len(batches) == 1:
                 raise

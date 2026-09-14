@@ -4,6 +4,7 @@ classification runs on the same chunks used for embeddings, so page/heading
 metadata is already attached.
 """
 import json
+import math
 import os
 from typing import Any, Dict
 
@@ -41,14 +42,18 @@ def classify_contract(contract_id: str, force: bool = False) -> Dict[str, Any]:
     if not chunks:
         raise HTTPException(status_code=422, detail="No contract text available to classify.")
 
+    total_pages = extraction.get("metadata", {}).get("num_pages") or 1
     classifier = get_classifier()
     results = []
     for i, chunk in enumerate(chunks):
         category, confidence = classifier.classify(chunk["text"])
+        p_num = chunk.get("page_number")
+        if p_num is None or p_num <= 0:
+            p_num = min(total_pages, max(1, math.ceil((i + 1) / max(1, len(chunks) / total_pages))))
         results.append(
             {
                 "chunk_index": i,
-                "page_number": chunk.get("page_number"),
+                "page_number": p_num,
                 "heading": chunk.get("heading"),
                 "text": chunk["text"],
                 "category": category,

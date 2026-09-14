@@ -30,8 +30,10 @@ SUMMARY_SYSTEM_PROMPT = (
     "invent any change not present in the list — write a concise summary (3-6 sentences) of the "
     "most important changes for someone deciding whether to sign the new version. Then "
     "categorize each significant change under one of: Payment, Liability, Termination, Dates, "
-    "Obligations, Intellectual Property, Confidentiality, Other. Respond with ONLY valid JSON "
-    "(no markdown, no commentary) matching exactly this shape: "
+    "Obligations, Intellectual Property, Confidentiality, Other. When setting 'page_number', "
+    "use ONLY the actual document page number from the location tag (e.g., if 'page A: 2', use 2). "
+    "NEVER use the item list index as a page number. If no page is present, use null. "
+    "Respond with ONLY valid JSON (no markdown, no commentary) matching exactly this shape: "
     '{"summary": string, "highlighted_changes": [{"category": string, '
     '"change_type": "ADDED"|"REMOVED"|"MODIFIED", "description": string, '
     '"section": string|null, "page_number": integer|null}]}'

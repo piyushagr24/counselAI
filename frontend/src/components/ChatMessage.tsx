@@ -578,7 +578,7 @@ export default function ChatMessage({ message, onReanswer, isBusy }: ChatMessage
     if (hasHeading) {
       return s.heading;
     }
-    return `Clause Excerpt`;
+    return hasPage ? `Page ${s.pageNumber}` : `Clause Excerpt`;
   };
 
   const handleCopyCitation = (source: ChatSource) => {
@@ -708,11 +708,9 @@ export default function ChatMessage({ message, onReanswer, isBusy }: ChatMessage
 
               <div className="p-5 space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  {selectedSource.pageNumber && (
-                    <span className="rounded-md bg-accent-50 px-2 py-0.5 text-xs font-semibold text-accent-700 border border-accent-100">
-                      Page {selectedSource.pageNumber}
-                    </span>
-                  )}
+                  <span className="rounded-md bg-accent-50 px-2 py-0.5 text-xs font-semibold text-accent-700 border border-accent-100">
+                    Page {selectedSource.pageNumber ?? 1}
+                  </span>
                   {selectedSource.heading && (
                     <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
                       {selectedSource.heading}
@@ -720,7 +718,7 @@ export default function ChatMessage({ message, onReanswer, isBusy }: ChatMessage
                   )}
                   {selectedSource.chunkIndex !== null && selectedSource.chunkIndex !== undefined && (
                     <span className="text-[11px] text-slate-400">
-                      Segment #{selectedSource.chunkIndex + 1}
+                      Clause #{selectedSource.chunkIndex + 1}
                     </span>
                   )}
                 </div>
