@@ -361,102 +361,119 @@ export default function ContractAnalysisPage() {
     }
   };
 
-  const handleExportReport = () => {
-    if (!contract) return;
-    const s = summary?.summary;
-    const lines = [
-      `# Executive Legal Contract Report: ${s?.title || contract.filename}`,
-      "",
-      `* **Generated Date:** ${new Date().toLocaleString()}`,
-      `* **Contract Type:** ${s?.contract_type || "Commercial Contract"}`,
-      `* **Overall Risk Assessment:** ${s?.overall_risk_score || "Unrated"}`,
-      `* **Effective Date:** ${s?.effective_date || "Not specified"}`,
-      `* **Expiration Date:** ${s?.expiration_date || "Not specified"}`,
-      `* **Governing Law:** ${s?.governing_law_and_jurisdiction || "Not specified"}`,
-      `* **Pages Extracted:** ${contract.num_pages ?? 1}`,
-      `* **Contract ID:** \`${contract.contract_id}\``,
-      "",
-      "---",
-      "",
-      "## 1. Executive Summary",
-      s?.executive_summary || s?.contract_purpose || "No summary available yet.",
-      "",
-      "### Key Commercial Terms",
-      `- **Parties Involved:** ${s?.parties?.length ? s.parties.join(", ") : "Not specified"}`,
-      `- **Duration & Term:** ${s?.duration || "Not specified"}`,
-      `- **Financial & Payment Terms:** ${s?.financial_terms || s?.payment_terms || "Not specified"}`,
-      `- **Dispute Resolution:** ${s?.dispute_resolution || "Not specified"}`,
-      `- **Confidentiality:** ${s?.confidentiality_terms || "Not specified"}`,
-      "",
-      "### Liability & Termination Safeguards",
-      `- **Termination Terms:** ${s?.termination_conditions || "Not specified"}`,
-      `- **Liabilities & Indemnities:** ${s?.liability_and_indemnification || "Not specified"}`,
-      "",
-      "---",
-      "",
-      `## 2. Risk Assessment Findings (${risks.length} flagged)`,
-      "",
-    ];
-
-    if (risks.length === 0) {
-      lines.push("No notable legal or commercial risks flagged for this contract.");
-    } else {
-      risks.forEach((r, idx) => {
-        lines.push(`### Risk ${idx + 1}: ${r.title} [${r.severity}]`);
-        if (r.category) lines.push(`* **Category:** ${r.category}`);
-        lines.push(`* **Location:** Page ${r.pageNumber ?? "N/A"} | Section: ${r.section ?? "N/A"}`);
-        lines.push(`* **Explanation:** ${r.explanation}`);
-        if (r.recommendation) lines.push(`* **Mitigation Recommendation:** ${r.recommendation}`);
-        lines.push(`* **Evidence Quote:** > "${r.evidence}"`);
-        lines.push("");
-      });
-    }
-
-    lines.push("---", "", `## 3. Extracted Obligations (${obligations.length} tracked)`, "");
-    if (obligations.length === 0) {
-      lines.push("No distinct obligations extracted.");
-    } else {
-      lines.push("| Party | Category | Priority | Obligation | Deadline | Page |");
-      lines.push("| :--- | :--- | :--- | :--- | :--- | :--- |");
-      obligations.forEach((o) => {
-        lines.push(
-          `| ${o.responsibleParty ?? "—"} | ${o.category ?? "General"} | ${o.priority ?? "Standard"} | ${o.obligation.replace(/\|/g, "-")} | ${o.deadline ?? "—"} | ${o.pageNumber ?? "—"} |`
-        );
-      });
-    }
-
-    lines.push("", "---", "", "## 4. Deadlines & Milestones", "");
-    if (deadlines) {
-      lines.push(`* **Start Date:** ${deadlines.contract_start_date ?? "Not specified"}`);
-      lines.push(`* **End Date:** ${deadlines.contract_end_date ?? "Not specified"}`);
-      lines.push(`* **Renewal Terms:** ${deadlines.renewal_date ?? "Not specified"}`);
-      lines.push(`* **Termination Notice Period:** ${deadlines.termination_notice_period ?? "Not specified"}`);
-      if (deadlines.payment_deadlines?.length) {
-        lines.push("", "### Payment Deadlines:");
-        deadlines.payment_deadlines.forEach((p) => lines.push(`- ${p.description}: ${p.date_or_timeframe ?? "N/A"}`));
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setExportMenuOpen(false);
       }
-    } else {
-      lines.push("No deadlines loaded.");
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleExport = async (format: "pdf" | "docx" | "md") => {
+    if (!contract || exportingFormat) return;
+    setExportMenuOpen(false);
+    setExportingFormat(format);
+
+    try {
+      let currentSummary = summary;
+      let currentRisks = risks;
+      let currentObligations = obligations;
+      let currentDeadlines = deadlines;
+
+      // Ensure any unvisited sections that exist in the contract are fetched before compiling
+      const fetchTasks: Promise<any>[] = [];
+      if (!currentSummary && contract.has_summary) {
+        fetchTasks.push(
+          getSummary(contract.contract_id, false)
+            .then((res) => {
+              currentSummary = res;
+              setSummary(res);
+            })
+            .catch(() => {})
+        );
+      }
+      if (currentRisks.length === 0 && contract.has_risks) {
+        fetchTasks.push(
+          getRisks(contract.contract_id, false)
+            .then((res) => {
+              const mapped = (res.risks || []).map((risk, index) => ({
+                id: `${contract.contract_id}-${index}`,
+                title: risk.title,
+                severity: risk.severity,
+                explanation: risk.explanation,
+                evidence: risk.evidence,
+                pageNumber: risk.page_number,
+                section: risk.section,
+                recommendation: risk.recommendation,
+                category: risk.category,
+              }));
+              currentRisks = mapped;
+              setRisks(mapped);
+            })
+            .catch(() => {})
+        );
+      }
+      if (currentObligations.length === 0 && contract.has_obligations) {
+        fetchTasks.push(
+          getObligations(contract.contract_id, false)
+            .then((res) => {
+              const mapped = (res.obligations || []).map((o) => ({
+                responsibleParty: o.responsible_party,
+                obligation: o.obligation,
+                deadline: o.deadline,
+                section: o.section,
+                pageNumber: o.page_number,
+                category: o.category,
+                priority: o.priority,
+              }));
+              currentObligations = mapped;
+              setObligations(mapped);
+            })
+            .catch(() => {})
+        );
+      }
+      if (!currentDeadlines && contract.has_deadlines) {
+        fetchTasks.push(
+          getDeadlines(contract.contract_id, false)
+            .then((res) => {
+              currentDeadlines = res.deadlines;
+              setDeadlines(res.deadlines);
+            })
+            .catch(() => {})
+        );
+      }
+
+      if (fetchTasks.length > 0) {
+        await Promise.all(fetchTasks);
+      }
+
+      const reportData = {
+        contract,
+        summary: currentSummary,
+        risks: currentRisks,
+        obligations: currentObligations,
+        deadlines: currentDeadlines,
+      };
+
+      if (format === "pdf") {
+        await exportToPdf(reportData);
+        setExportedToast("Report exported as PDF!");
+      } else if (format === "docx") {
+        await exportToDocx(reportData);
+        setExportedToast("Report exported as Word (.docx)!");
+      } else {
+        exportToMarkdown(reportData);
+        setExportedToast("Report exported as Markdown!");
+      }
+
+      setTimeout(() => setExportedToast(null), 3500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to export report.");
+    } finally {
+      setExportingFormat(null);
     }
-
-    lines.push(
-      "",
-      "---",
-      "*Legal Disclaimer: This report was synthesized by Counsel AI for informational contract review. It does not constitute formal legal counsel.*"
-    );
-
-    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${contract.filename.replace(/\.[^/.]+$/, "")}_Executive_Analysis.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    setExportedToast(true);
-    setTimeout(() => setExportedToast(false), 3000);
   };
 
   if (!contract) return <LoadingState />;
@@ -535,19 +552,91 @@ export default function ContractAnalysisPage() {
         <div className="flex flex-wrap items-center gap-2">
           {exportedToast && (
             <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1.5 rounded-lg animate-in fade-in">
-              <Check size={14} /> Report Exported!
+              <Check size={14} /> {exportedToast}
             </span>
           )}
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportReport}
-            leftIcon={<Download size={14} />}
-            title="Export complete analysis report as Markdown"
-          >
-            Export Executive Report
-          </Button>
+          {/* Export Dropdown Menu */}
+          <div className="relative inline-block text-left" ref={exportMenuRef}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setExportMenuOpen((prev) => !prev)}
+              disabled={!!exportingFormat}
+              loading={!!exportingFormat}
+              leftIcon={<Download size={14} />}
+              rightIcon={<ChevronDown size={13} className={`transition-transform duration-150 ${exportMenuOpen ? "rotate-180" : ""}`} />}
+              title="Export complete analysis report"
+            >
+              {exportingFormat
+                ? `Exporting ${exportingFormat.toUpperCase()}…`
+                : "Export Report"}
+            </Button>
+
+            {exportMenuOpen && (
+              <div className="absolute right-0 mt-1.5 w-64 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-100">
+                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Choose Export Format
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleExport("pdf")}
+                  className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-slate-50 transition-colors group"
+                >
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-rose-50 text-rose-600 border border-rose-100 group-hover:bg-rose-100 transition-colors">
+                    <FileText size={14} />
+                  </span>
+                  <div>
+                    <div className="text-xs font-semibold text-ink-900 group-hover:text-accent-600">
+                      PDF Document (.pdf)
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Executive memo with vector tables & risk indicators
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleExport("docx")}
+                  className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-slate-50 transition-colors group"
+                >
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600 border border-blue-100 group-hover:bg-blue-100 transition-colors">
+                    <FileText size={14} />
+                  </span>
+                  <div>
+                    <div className="text-xs font-semibold text-ink-900 group-hover:text-accent-600">
+                      Word Document (.docx)
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Editable document with formatted tables for redlining
+                    </div>
+                  </div>
+                </button>
+
+                <div className="my-1 border-t border-slate-100" />
+
+                <button
+                  type="button"
+                  onClick={() => void handleExport("md")}
+                  className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-slate-50 transition-colors group"
+                >
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600 border border-slate-200 group-hover:bg-slate-200 transition-colors">
+                    <Download size={14} />
+                  </span>
+                  <div>
+                    <div className="text-xs font-semibold text-ink-900 group-hover:text-accent-600">
+                      Markdown (.md)
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Raw markdown text report
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
 
           {activeTab !== "overview" && activeTab !== "ask" && (
             <Button
