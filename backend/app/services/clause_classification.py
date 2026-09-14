@@ -33,9 +33,21 @@ def _load_extraction(contract_id: str) -> Dict[str, Any]:
 
 def classify_contract(contract_id: str, force: bool = False) -> Dict[str, Any]:
     cache_path = _clauses_cache_path(contract_id)
+    classifier = get_classifier()
+
     if not force and os.path.exists(cache_path):
-        with open(cache_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+            clauses = cached.get("clauses", [])
+            is_stale_keyword = (
+                cached.get("method") == "keyword_fallback"
+                or (clauses and all(c.get("confidence") in (0.0, 0.5) for c in clauses))
+            )
+            if not (is_stale_keyword and classifier.method_name != "keyword_fallback"):
+                return cached
+        except Exception:
+            pass
 
     extraction = _load_extraction(contract_id)
     chunks = chunk_segments(extraction["segments"])

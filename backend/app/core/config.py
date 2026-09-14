@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     chunk_size: int = 800
     chunk_overlap: int = 100
     classification_model: str = "valhalla/distilbart-mnli-12-3"
-    classification_backend: str = "auto"
+    classification_backend: str = "llm"
     fine_tuned_model_path: str = ""
     risk_model_path: str = ""  # future: path to a trained risk-classification model, if any
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"

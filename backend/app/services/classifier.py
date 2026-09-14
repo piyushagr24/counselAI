@@ -14,10 +14,13 @@ If no transformer backend can be loaded (e.g. no internet to download model
 weights), a keyword-based fallback is used instead. It is clearly labeled via
 `method_name` in every result — never silently presented as a trained model.
 """
+import logging
 from functools import lru_cache
 from typing import List, Tuple
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 CLAUSE_CATEGORIES = [
     "Payment",
@@ -92,17 +95,17 @@ class LLMClauseClassifier(ClauseClassifier):
         if not texts:
             return []
 
+        from concurrent.futures import ThreadPoolExecutor
         from app.services.llm_client import generate_answer
         from app.utils.json_parsing import extract_list_loose
 
-        results: List[Tuple[str, float]] = []
-        batch_size = 10
+        batch_size = 15
+        slices = [texts[i : i + batch_size] for i in range(0, len(texts), batch_size)]
 
-        for i in range(0, len(texts), batch_size):
-            chunk_slice = texts[i : i + batch_size]
+        def _process_slice(chunk_slice: List[str]) -> List[Tuple[str, float]]:
             prompt_items = []
             for idx, txt in enumerate(chunk_slice, start=1):
-                snippet = txt.strip()[:600]
+                snippet = txt.strip()[:350]
                 prompt_items.append(f"[Excerpt {idx}]:\n\"{snippet}\"")
 
             user_prompt = "\n\n".join(prompt_items)
@@ -125,7 +128,7 @@ class LLMClauseClassifier(ClauseClassifier):
                 "[\n"
                 "  {\"index\": 1, \"category\": \"<Category Name>\", \"confidence\": <float between 0.70 and 0.99>}\n"
                 "]\n"
-                "Respond ONLY with valid JSON. Do not include introductory text or explanations."
+                "Respond ONLY with valid JSON array. Do not include introductory text or explanations."
             )
 
             try:
@@ -137,11 +140,11 @@ class LLMClauseClassifier(ClauseClassifier):
                     if isinstance(item, dict):
                         idx = item.get("index")
                         cat = str(item.get("category", "")).strip()
-                        conf = item.get("confidence", 0.85)
+                        conf = item.get("confidence", 0.95)
                         try:
                             conf_float = float(conf)
                         except (ValueError, TypeError):
-                            conf_float = 0.85
+                            conf_float = 0.95
 
                         matched_cat = "Other"
                         for valid_cat in CLAUSE_CATEGORIES:
@@ -155,18 +158,29 @@ class LLMClauseClassifier(ClauseClassifier):
                             except (ValueError, TypeError):
                                 pass
 
+                slice_results = []
                 for idx_in_slice in range(1, len(chunk_slice) + 1):
                     if idx_in_slice in index_map:
-                        results.append(index_map[idx_in_slice])
+                        slice_results.append(index_map[idx_in_slice])
                     else:
                         fallback = KeywordFallbackClassifier()
-                        results.append(fallback.classify(chunk_slice[idx_in_slice - 1]))
+                        slice_results.append(fallback.classify(chunk_slice[idx_in_slice - 1]))
+                return slice_results
 
-            except Exception:
+            except Exception as exc:
+                logger.warning("LLM clause classification batch failed (%s), using keyword fallback for slice.", exc)
                 fallback = KeywordFallbackClassifier()
-                for txt in chunk_slice:
-                    results.append(fallback.classify(txt))
+                return [fallback.classify(txt) for txt in chunk_slice]
 
+        if len(slices) == 1:
+            return _process_slice(slices[0])
+
+        with ThreadPoolExecutor(max_workers=min(4, len(slices))) as executor:
+            batch_outputs = list(executor.map(_process_slice, slices))
+
+        results: List[Tuple[str, float]] = []
+        for b_out in batch_outputs:
+            results.extend(b_out)
         return results
 
 
@@ -213,42 +227,30 @@ class FineTunedTransformerClassifier(ClauseClassifier):
 
 @lru_cache(maxsize=1)
 def get_classifier() -> ClauseClassifier:
-    backend_choice = getattr(settings, "classification_backend", "auto").lower().strip()
+    backend_choice = getattr(settings, "classification_backend", "llm").lower().strip()
 
     # 1. Check fine-tuned model path if configured
-    if settings.fine_tuned_model_path and backend_choice in {"auto", "fine_tuned", "transformer"}:
+    if settings.fine_tuned_model_path and backend_choice in {"fine_tuned", "transformer"}:
         try:
             return FineTunedTransformerClassifier(settings.fine_tuned_model_path)
         except Exception:
             pass
 
-    # 2. If explicitly set to 'llm'
-    if backend_choice == "llm":
+    # 2. If explicitly set to 'llm' or 'auto'
+    if backend_choice in {"llm", "auto"}:
         try:
             return LLMClauseClassifier()
         except Exception:
             pass
 
-    # 3. In 'auto' mode: on cloud host where transformers/torch are not installed, use LLM
-    if backend_choice == "auto":
-        try:
-            import transformers  # noqa: F401
-            import torch  # noqa: F401
-            return ZeroShotTransformerClassifier(settings.classification_model)
-        except Exception:
-            try:
-                return LLMClauseClassifier()
-            except Exception:
-                pass
-
-    # 4. If explicitly set to 'transformer'
+    # 3. If explicitly set to 'transformer'
     if backend_choice == "transformer":
         try:
             return ZeroShotTransformerClassifier(settings.classification_model)
         except Exception:
             pass
 
-    # 5. Try LLM before falling back to keywords
+    # 4. Fallback attempt to LLM
     try:
         return LLMClauseClassifier()
     except Exception:

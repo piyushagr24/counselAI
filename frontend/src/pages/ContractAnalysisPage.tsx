@@ -811,6 +811,16 @@ export default function ContractAnalysisPage() {
                     {cat === "all" ? "All Categories" : cat}
                   </button>
                 ))}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void loadTabData("clauses", true)}
+                  disabled={tabLoading.clauses}
+                  leftIcon={<RefreshCw size={12} className={tabLoading.clauses ? "animate-spin" : ""} />}
+                  className="h-7 text-[11px] font-medium ml-1"
+                >
+                  {tabLoading.clauses ? "Classifying…" : "Re-classify"}
+                </Button>
               </div>
             </div>
 
