@@ -245,9 +245,9 @@ export default function ComparisonPage() {
         </div>
 
         {/* Dual Comparison Selector Section */}
-        <div className="mt-5">
+        <div className="mt-5 w-full min-w-0">
           {mode === "upload" ? (
-            <div className="relative grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-center gap-4">
+            <div className="relative grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 w-full min-w-0">
               {/* Panel A */}
               <ModernFileDropzone
                 label="Baseline Version (A)"
@@ -259,12 +259,12 @@ export default function ComparisonPage() {
               />
 
               {/* Swap Button */}
-              <div className="flex justify-center md:py-0">
+              <div className="flex justify-center shrink-0 md:py-0">
                 <button
                   type="button"
                   onClick={handleSwap}
                   title="Swap Baseline (A) and Revised (B)"
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-xs hover:border-accent-400 hover:bg-accent-50 hover:text-accent-600 transition-all hover:scale-105 active:scale-95"
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-xs hover:border-accent-400 hover:bg-accent-50 hover:text-accent-600 transition-all hover:scale-105 active:scale-95 shrink-0"
                 >
                   <ArrowLeftRight size={16} />
                 </button>
@@ -281,9 +281,9 @@ export default function ComparisonPage() {
               />
             </div>
           ) : (
-            <div className="relative grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-center gap-4">
+            <div className="relative grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 w-full min-w-0">
               {/* Select A */}
-              <div className="rounded-xl border border-slate-200 bg-slate-25 p-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-25 p-4 min-w-0 w-full">
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Baseline Version (A)
@@ -336,7 +336,7 @@ export default function ComparisonPage() {
               </div>
 
               {/* Select B */}
-              <div className="rounded-xl border border-slate-200 bg-slate-25 p-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-25 p-4 min-w-0 w-full">
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="text-xs font-semibold uppercase tracking-wider text-accent-700">
                     Revised Version (B)
@@ -647,7 +647,7 @@ function ModernFileDropzone({
       }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
-      className={`relative flex flex-col rounded-xl border-2 transition-all ${
+      className={`relative flex min-w-0 w-full flex-col rounded-xl border-2 transition-all ${
         isDragging
           ? "border-accent-500 bg-accent-50/50 scale-[1.01]"
           : file
@@ -668,36 +668,36 @@ function ModernFileDropzone({
         }}
       />
 
-      <div className="p-4 sm:p-5">
-        <div className="flex items-center justify-between gap-2 mb-2.5">
-          <div>
+      <div className="p-4 sm:p-5 min-w-0 w-full overflow-hidden">
+        <div className="flex items-center justify-between gap-2 mb-2.5 min-w-0 w-full">
+          <div className="min-w-0 flex-1 overflow-hidden">
             <span
-              className={`text-xs font-semibold uppercase tracking-wider ${
+              className={`text-xs font-semibold uppercase tracking-wider block truncate ${
                 badgeColor === "accent" ? "text-accent-700" : "text-slate-600"
               }`}
             >
               {label}
             </span>
-            <p className="text-[11px] text-slate-400">{subtitle}</p>
+            <p className="text-[11px] text-slate-400 truncate">{subtitle}</p>
           </div>
           {file && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 border border-emerald-100">
+            <span className="shrink-0 inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 border border-emerald-100">
               <CheckCircle2 size={11} /> Ready
             </span>
           )}
         </div>
 
         {file ? (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50/70 p-3 mt-1">
-            <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center justify-between gap-2 sm:gap-3 rounded-lg border border-slate-100 bg-slate-50/70 p-3 mt-1 min-w-0 w-full overflow-hidden">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-100 text-accent-700">
                 <FileSpreadsheet size={18} />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1 overflow-hidden">
                 <p className="truncate text-xs font-semibold text-ink-900" title={file.name}>
                   {file.name}
                 </p>
-                <p className="text-[10px] text-slate-400">{formatFileSize(file.size)}</p>
+                <p className="text-[10px] text-slate-400 truncate">{formatFileSize(file.size)}</p>
               </div>
             </div>
 
@@ -705,7 +705,7 @@ function ModernFileDropzone({
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="rounded px-2 py-1 text-xs font-medium text-accent-600 hover:bg-accent-50 transition-colors"
+                className="rounded px-2 py-1 text-xs font-medium text-accent-600 hover:bg-accent-50 transition-colors shrink-0"
               >
                 Change
               </button>
@@ -713,7 +713,7 @@ function ModernFileDropzone({
                 type="button"
                 onClick={onRemove}
                 title="Remove file"
-                className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-colors"
+                className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-colors shrink-0"
               >
                 <X size={14} />
               </button>
