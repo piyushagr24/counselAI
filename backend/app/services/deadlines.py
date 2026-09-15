@@ -18,8 +18,8 @@ from app.services.extraction_batching import atomize_segments, pack_batches, lab
 from app.services.llm_client import generate_answer
 from app.utils.json_parsing import parse_json_loose
 
-MAX_UNIT_CHARS = 2000
-MAX_BATCH_CHARS = 11000
+MAX_UNIT_CHARS = 1200
+MAX_BATCH_CHARS = 4500
 
 _DATE_ITEM_SHAPE = '{"description": string, "date_or_timeframe": string|null, "excerpt_id": integer|null, "page_number": integer|null}'
 
@@ -103,7 +103,7 @@ def _get_contract_lock(contract_id: str) -> threading.Lock:
 
 
 def _process_deadline_batch(batch: List[Dict[str, Any]], total_pages: Any) -> DeadlinesSummary:
-    raw = generate_answer(SYSTEM_PROMPT, label_batch(batch), max_tokens=600)
+    raw = generate_answer(SYSTEM_PROMPT, label_batch(batch), max_tokens=500)
     batch_summary = _parse_batch_response(raw)
     for lst in (batch_summary.payment_deadlines, batch_summary.delivery_deadlines, batch_summary.other_dates):
         for item in lst:
@@ -138,17 +138,12 @@ def extract_deadlines(contract_id: str, force: bool = False) -> Dict[str, Any]:
         total_pages = extraction.get("metadata", {}).get("num_pages")
         batches = pack_batches(units, MAX_BATCH_CHARS)
 
-        if len(batches) == 1:
-            merged = _process_deadline_batch(batches[0], total_pages)
-        else:
-            merged = DeadlinesSummary()
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                batch_results = list(executor.map(
-                    lambda b: _process_deadline_batch(b, total_pages),
-                    batches,
-                ))
-                for b_sum in batch_results:
-                    merged = _merge(merged, b_sum)
+        merged = DeadlinesSummary()
+        for idx, batch in enumerate(batches):
+            b_sum = _process_deadline_batch(batch, total_pages)
+            merged = _merge(merged, b_sum)
+            if idx < len(batches) - 1:
+                time.sleep(0.5)  # gentle pacing between batches to respect TPM limits
 
         output = {"contract_id": contract_id, "deadlines": merged.model_dump()}
         with open(cache_path, "w", encoding="utf-8") as f:

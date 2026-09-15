@@ -31,8 +31,8 @@ from app.services.extraction_batching import atomize_segments, pack_batches, lab
 from app.services.llm_client import generate_answer
 from app.utils.json_parsing import extract_list_loose
 
-MAX_UNIT_CHARS = 2000
-MAX_BATCH_CHARS = 11000
+MAX_UNIT_CHARS = 1200
+MAX_BATCH_CHARS = 4500
 
 RISK_CATEGORIES = [
     "Unlimited liability",
@@ -79,7 +79,7 @@ class LLMRiskAnalyzer(RiskAnalyzer):
     method_name = "llm_grounded_analysis"
 
     def analyze_batch(self, labeled_excerpts: str) -> List[Dict[str, Any]]:
-        raw = generate_answer(SYSTEM_PROMPT, labeled_excerpts, max_tokens=1000)
+        raw = generate_answer(SYSTEM_PROMPT, labeled_excerpts, max_tokens=800)
         return _parse_batch_response(raw)
 
 
@@ -187,8 +187,8 @@ def analyze_risks(contract_id: str, force: bool = False) -> Dict[str, Any]:
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
                 cached = json.load(f)
-                # Serve from cache if findings exist
-                if cached.get("risks"):
+                # Serve from cache if findings exist (including explicit empty list [])
+                if "risks" in cached and cached["risks"] is not None:
                     return cached
         except Exception:
             pass  # Recompute if corrupted or unreadable
@@ -200,7 +200,7 @@ def analyze_risks(contract_id: str, force: bool = False) -> Dict[str, Any]:
             try:
                 with open(cache_path, "r", encoding="utf-8") as f:
                     cached = json.load(f)
-                    if cached.get("risks"):
+                    if "risks" in cached and cached["risks"] is not None:
                         return cached
             except Exception:
                 pass
@@ -215,19 +215,11 @@ def analyze_risks(contract_id: str, force: bool = False) -> Dict[str, Any]:
         all_risks: List[Dict[str, Any]] = []
         batches = pack_batches(units, MAX_BATCH_CHARS)
 
-        if len(batches) == 1:
-            try:
-                all_risks = _process_risk_batch(batches[0], analyzer, total_pages)
-            except Exception:
-                raise
-        else:
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                batch_results = list(executor.map(
-                    lambda b: _process_risk_batch(b, analyzer, total_pages),
-                    batches,
-                ))
-                for b_risks in batch_results:
-                    all_risks.extend(b_risks)
+        for idx, batch in enumerate(batches):
+            b_risks = _process_risk_batch(batch, analyzer, total_pages)
+            all_risks.extend(b_risks)
+            if idx < len(batches) - 1:
+                time.sleep(0.5)  # gentle pacing between batches to respect TPM limits
 
         unique_risks = _deduplicate_risks(all_risks)
         output = {"contract_id": contract_id, "method": analyzer.method_name, "risks": unique_risks}

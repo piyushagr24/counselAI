@@ -89,7 +89,7 @@ def _generate_groq(system_prompt: str, user_prompt: str, max_tokens: int, api_ke
             {"role": "user", "content": user_prompt},
         ],
     }
-    with _groq_semaphore:
+    with _llm_semaphore:
         data = _post_json(url, payload, {"Authorization": f"Bearer {api_key}"})
     try:
         msg = data["choices"][0]["message"]
@@ -105,22 +105,23 @@ def _generate_anthropic(system_prompt: str, user_prompt: str, max_tokens: int) -
     if not settings.anthropic_api_key:
         raise LLMError("ANTHROPIC_API_KEY is not set in .env")
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    try:
-        response = client.messages.create(
-            model=settings.llm_model.strip(),
-            max_tokens=max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-    except anthropic.APIError as exc:
-        raise LLMError(f"Anthropic LLM request failed: {exc}") from exc
+    with _llm_semaphore:
+        try:
+            response = client.messages.create(
+                model=settings.llm_model.strip(),
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+        except anthropic.APIError as exc:
+            raise LLMError(f"Anthropic LLM request failed: {exc}") from exc
     return "".join(block.text for block in response.content if block.type == "text").strip()
 
 
 _last_request_time: float = 0.0
-_MIN_REQUEST_INTERVAL: float = 0.25  # seconds between consecutive API calls to prevent bursting
+_MIN_REQUEST_INTERVAL: float = 0.8  # seconds between consecutive API calls to prevent bursting
 _request_lock = threading.Lock()
-_groq_semaphore = threading.Semaphore(2)  # Cap concurrent Groq requests to 2 to protect 8k TPM limit
+_llm_semaphore = threading.Semaphore(1)  # Strictly serialize LLM calls to protect free/dev tier token budgets
 _remaining_tokens: int = 8000
 _token_reset_target: float = 0.0
 
@@ -130,10 +131,10 @@ def _pace_request():
     global _last_request_time, _remaining_tokens, _token_reset_target
     with _request_lock:
         now = time.time()
-        # If Groq reports that remaining tokens in the 1-minute window are low, pause for replenishment
-        if _remaining_tokens < 2000 and now < _token_reset_target:
-            pause_time = min(max(0.05, _token_reset_target - now), 5.0)
-            logger.info("Proactively pacing for Groq token replenishment (remaining: %d, pause: %.2fs)", _remaining_tokens, pause_time)
+        # If upstream reports that remaining tokens in the window are low, pause for replenishment
+        if _remaining_tokens < 2500 and now < _token_reset_target:
+            pause_time = min(max(0.1, _token_reset_target - now), 15.0)
+            logger.info("Proactively pacing for token replenishment (remaining: %d, pause: %.2fs)", _remaining_tokens, pause_time)
             time.sleep(pause_time)
             now = time.time()
 
@@ -250,18 +251,19 @@ def _post_json(url: str, payload: dict, headers: dict, max_retries: int = 5) -> 
 
 def _generate_openai_compatible(system_prompt: str, user_prompt: str, max_tokens: int) -> str:
     url = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
-    data = _post_json(
-        url,
-        {
-            "model": settings.llm_model.strip(),
-            "max_tokens": max_tokens,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        },
-        {"Authorization": f"Bearer {settings.openai_api_key}"},
-    )
+    with _llm_semaphore:
+        data = _post_json(
+            url,
+            {
+                "model": settings.llm_model.strip(),
+                "max_tokens": max_tokens,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            },
+            {"Authorization": f"Bearer {settings.openai_api_key}"},
+        )
     try:
         return data["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError, AttributeError) as exc:
@@ -270,15 +272,16 @@ def _generate_openai_compatible(system_prompt: str, user_prompt: str, max_tokens
 
 def _generate_gemini(system_prompt: str, user_prompt: str, max_tokens: int) -> str:
     url = f"{settings.gemini_base_url.rstrip('/')}/models/{settings.llm_model.strip()}:generateContent"
-    data = _post_json(
-        url,
-        {
-            "systemInstruction": {"parts": [{"text": system_prompt}]},
-            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-            "generationConfig": {"maxOutputTokens": max_tokens},
-        },
-        {"x-goog-api-key": settings.gemini_api_key},
-    )
+    with _llm_semaphore:
+        data = _post_json(
+            url,
+            {
+                "systemInstruction": {"parts": [{"text": system_prompt}]},
+                "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+                "generationConfig": {"maxOutputTokens": max_tokens},
+            },
+            {"x-goog-api-key": settings.gemini_api_key},
+        )
     try:
         return data["candidates"][0]["content"]["parts"][0]["text"].strip()
     except (KeyError, IndexError, AttributeError) as exc:

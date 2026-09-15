@@ -107,17 +107,17 @@ class LLMClauseClassifier(ClauseClassifier):
         if not texts:
             return []
 
-        from concurrent.futures import ThreadPoolExecutor
+        import time
         from app.services.llm_client import generate_answer
         from app.utils.json_parsing import extract_list_loose
 
-        batch_size = 15
+        batch_size = 8
         slices = [texts[i : i + batch_size] for i in range(0, len(texts), batch_size)]
 
         def _process_slice(chunk_slice: List[str]) -> List[Tuple[str, float]]:
             prompt_items = []
             for idx, txt in enumerate(chunk_slice, start=1):
-                snippet = txt.strip()[:350]
+                snippet = txt.strip()[:300]
                 prompt_items.append(f"[Excerpt {idx}]:\n\"{snippet}\"")
 
             user_prompt = "\n\n".join(prompt_items)
@@ -154,7 +154,7 @@ class LLMClauseClassifier(ClauseClassifier):
             )
 
             try:
-                raw_response = generate_answer(system_prompt, user_prompt, max_tokens=1000)
+                raw_response = generate_answer(system_prompt, user_prompt, max_tokens=700)
                 parsed_list = extract_list_loose(raw_response)
 
                 index_map: dict[int, Tuple[str, float]] = {}
@@ -194,15 +194,11 @@ class LLMClauseClassifier(ClauseClassifier):
                 fallback = KeywordFallbackClassifier()
                 return [fallback.classify(txt) for txt in chunk_slice]
 
-        if len(slices) == 1:
-            return _process_slice(slices[0])
-
-        with ThreadPoolExecutor(max_workers=min(4, len(slices))) as executor:
-            batch_outputs = list(executor.map(_process_slice, slices))
-
         results: List[Tuple[str, float]] = []
-        for b_out in batch_outputs:
-            results.extend(b_out)
+        for s_idx, sl in enumerate(slices):
+            results.extend(_process_slice(sl))
+            if s_idx < len(slices) - 1:
+                time.sleep(0.4)  # subtle pacing delay to respect TPM window
         return results
 
 

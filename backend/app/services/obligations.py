@@ -18,8 +18,8 @@ from app.services.extraction_batching import atomize_segments, pack_batches, lab
 from app.services.llm_client import generate_answer
 from app.utils.json_parsing import extract_list_loose
 
-MAX_UNIT_CHARS = 2000
-MAX_BATCH_CHARS = 11000
+MAX_UNIT_CHARS = 1200
+MAX_BATCH_CHARS = 4500
 
 SYSTEM_PROMPT = (
     "You are an expert contract analyst. From the contract excerpts below, extract every "
@@ -89,7 +89,7 @@ def _get_contract_lock(contract_id: str) -> threading.Lock:
 
 
 def _process_obligation_batch(batch: List[Dict[str, Any]], total_pages: Any) -> List[Obligation]:
-    raw = generate_answer(SYSTEM_PROMPT, label_batch(batch), max_tokens=800)
+    raw = generate_answer(SYSTEM_PROMPT, label_batch(batch), max_tokens=650)
     batch_items = _parse_batch_response(raw)
     for ob in batch_items:
         resolved_page, resolved_sec = resolve_item_location(
@@ -144,16 +144,11 @@ def extract_obligations(contract_id: str, force: bool = False) -> Dict[str, Any]
         all_obligations: List[Obligation] = []
         batches = pack_batches(units, MAX_BATCH_CHARS)
 
-        if len(batches) == 1:
-            all_obligations = _process_obligation_batch(batches[0], total_pages)
-        else:
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                batch_results = list(executor.map(
-                    lambda b: _process_obligation_batch(b, total_pages),
-                    batches,
-                ))
-                for b_obs in batch_results:
-                    all_obligations.extend(b_obs)
+        for idx, batch in enumerate(batches):
+            b_obs = _process_obligation_batch(batch, total_pages)
+            all_obligations.extend(b_obs)
+            if idx < len(batches) - 1:
+                time.sleep(0.5)  # gentle pacing between batches to respect TPM limits
 
         unique_obligations = _deduplicate_obligations(all_obligations)
         output = {"contract_id": contract_id, "obligations": [o.model_dump() for o in unique_obligations]}

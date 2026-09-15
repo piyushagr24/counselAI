@@ -18,7 +18,7 @@ from app.services.llm_client import generate_answer, LLMError
 from app.utils.json_parsing import parse_json_loose
 
 MAX_SINGLE_PASS_CHARS = 25000  # above this, use map-reduce instead of one LLM call
-MAP_CHUNK_CHARS = 8000
+MAP_CHUNK_CHARS = 5000
 MAP_OVERLAP = 250
 
 SUMMARY_SCHEMA_HINT = (
@@ -86,7 +86,7 @@ def _map_reduce_summarize(full_text: str) -> ContractSummary:
         note = generate_answer(MAP_SYSTEM_PROMPT, piece, max_tokens=500)
         if note.strip() and "no relevant information" not in note.lower():
             notes.append(note.strip())
-        time.sleep(0.3)  # subtle pacing delay to respect Groq OTPM/RPM window
+        time.sleep(0.5)  # subtle pacing delay to respect Groq OTPM/RPM window
 
     combined_notes = "\n\n".join(notes) if notes else "No relevant information extracted."
     raw = generate_answer(REDUCE_SYSTEM_PROMPT, combined_notes, max_tokens=1100)

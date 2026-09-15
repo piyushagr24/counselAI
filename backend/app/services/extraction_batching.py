@@ -29,7 +29,7 @@ _STOPWORDS: Set[str] = {
 }
 
 
-def atomize_segments(segments: List[Dict[str, Any]], max_unit_chars: int = 1500) -> List[Dict[str, Any]]:
+def atomize_segments(segments: List[Dict[str, Any]], max_unit_chars: int = 1200) -> List[Dict[str, Any]]:
     """Split any oversized segment into smaller pieces, keeping page/heading attached."""
     units = []
     for seg in segments:
@@ -41,7 +41,7 @@ def atomize_segments(segments: List[Dict[str, Any]], max_unit_chars: int = 1500)
     return units
 
 
-def pack_batches(units: List[Dict[str, Any]], max_batch_chars: int = 11000) -> List[List[Dict[str, Any]]]:
+def pack_batches(units: List[Dict[str, Any]], max_batch_chars: int = 4500) -> List[List[Dict[str, Any]]]:
     """Greedily group units under a character budget to minimize LLM calls."""
     batches, current, current_len = [], [], 0
     for u in units:
