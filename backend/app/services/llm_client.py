@@ -77,28 +77,88 @@ def generate_answer(system_prompt: str, user_prompt: str, max_tokens: int = 500)
         raise
 
 
+class RateLimitFailover(LLMError):
+    def __init__(self, sleep_secs: float, detail: str):
+        super().__init__(detail)
+        self.sleep_secs = sleep_secs
+        self.detail = detail
+
+
+GROQ_MODEL_POOL = [
+    "qwen/qwen3.8-27b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "groq/compound-mini",
+]
+
+_model_cooldowns: dict[str, float] = {}
+_cooldown_lock = threading.Lock()
+
+
+def _get_ordered_groq_models() -> list[str]:
+    primary = settings.llm_model.strip() or "qwen/qwen3.8-27b"
+    pool = [primary] + [m for m in GROQ_MODEL_POOL if m != primary]
+    now = time.time()
+    with _cooldown_lock:
+        ready = [m for m in pool if _model_cooldowns.get(m, 0.0) <= now]
+        cooling = [m for m in pool if _model_cooldowns.get(m, 0.0) > now]
+    return ready + cooling if ready else pool
+
+
+def _set_groq_cooldown(model: str, seconds: float):
+    with _cooldown_lock:
+        _model_cooldowns[model] = time.time() + seconds
+
+
 def _generate_groq(system_prompt: str, user_prompt: str, max_tokens: int, api_key: str) -> str:
     url = f"{settings.groq_base_url.rstrip('/')}/chat/completions"
-    model = settings.llm_model.strip()
-    payload = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "temperature": 0.1,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    }
-    with _llm_semaphore:
-        data = _post_json(url, payload, {"Authorization": f"Bearer {api_key}"})
-    try:
-        msg = data["choices"][0]["message"]
-        content = (msg.get("content") or "").strip()
-        if not content and msg.get("reasoning"):
-            content = msg["reasoning"].strip()
-        return content
-    except (KeyError, IndexError, AttributeError) as exc:
-        raise LLMError("Groq returned an unexpected response format") from exc
+    models = _get_ordered_groq_models()
+    last_exc = None
+
+    for i, model in enumerate(models):
+        is_last = (i == len(models) - 1)
+        payload = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": 0.1,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        with _llm_semaphore:
+            try:
+                data = _post_json(
+                    url,
+                    payload,
+                    {"Authorization": f"Bearer {api_key}"},
+                    max_retries=2 if not is_last else 4,
+                    allow_failover=not is_last,
+                )
+                msg = data["choices"][0]["message"]
+                content = (msg.get("content") or "").strip()
+                if not content and msg.get("reasoning"):
+                    content = msg["reasoning"].strip()
+                if content:
+                    logger.info("Groq inference succeeded using model: %s", model)
+                    return content
+            except RateLimitFailover as rlf:
+                _set_groq_cooldown(model, rlf.sleep_secs)
+                logger.warning(
+                    "Groq model '%s' rate-limited (cooldown: %.1fs). Instantly failing over to next model in pool...",
+                    model,
+                    rlf.sleep_secs,
+                )
+                last_exc = rlf
+                continue
+            except Exception as exc:
+                logger.warning("Groq model '%s' failed (%s). Trying next model in pool...", model, exc)
+                last_exc = exc
+                continue
+
+    if last_exc:
+        raise last_exc
+    raise LLMError("All Groq models failed in pool.")
 
 
 def _generate_anthropic(system_prompt: str, user_prompt: str, max_tokens: int) -> str:
@@ -144,7 +204,7 @@ def _pace_request():
         _last_request_time = time.time()
 
 
-def _post_json(url: str, payload: dict, headers: dict, max_retries: int = 5) -> dict:
+def _post_json(url: str, payload: dict, headers: dict, max_retries: int = 5, allow_failover: bool = False) -> dict:
     """Post JSON with custom User-Agent, adaptive pacing, and automatic backoff retry on HTTP 429/503."""
     global _remaining_tokens, _token_reset_target
     _pace_request()
@@ -189,29 +249,34 @@ def _post_json(url: str, payload: dict, headers: dict, max_retries: int = 5) -> 
 
             # Edge Case: Rate Limit (HTTP 429) backoff retry
             if exc.code == 429:
-                if attempt < max_retries:
-                    sleep_secs = None
-                    # 1. Parse Groq's exact duration from error JSON ("Please try again in 9.54s.")
-                    match = re.search(r"try again in ([0-9.]+)\s*s", detail, re.IGNORECASE)
-                    if match:
+                sleep_secs = None
+                # 1. Parse Groq's exact duration from error JSON ("Please try again in 9.54s.")
+                match = re.search(r"try again in ([0-9.]+)\s*s", detail, re.IGNORECASE)
+                if match:
+                    try:
+                        sleep_secs = float(match.group(1)) + 0.5
+                    except (ValueError, TypeError):
+                        pass
+                # 2. Check standard Retry-After header
+                if sleep_secs is None:
+                    headers_obj = getattr(exc, "headers", None)
+                    retry_after = headers_obj.get("Retry-After") if headers_obj and hasattr(headers_obj, "get") else None
+                    if retry_after:
                         try:
-                            sleep_secs = float(match.group(1)) + 0.5
+                            sleep_secs = float(retry_after) + 0.5
                         except (ValueError, TypeError):
                             pass
-                    # 2. Check standard Retry-After header
-                    if sleep_secs is None:
-                        headers_obj = getattr(exc, "headers", None)
-                        retry_after = headers_obj.get("Retry-After") if headers_obj and hasattr(headers_obj, "get") else None
-                        if retry_after:
-                            try:
-                                sleep_secs = float(retry_after) + 0.5
-                            except (ValueError, TypeError):
-                                pass
-                    # 3. Fallback exponential backoff
-                    if sleep_secs is None:
-                        sleep_secs = 2.0 * (2 ** attempt) + random.uniform(0.2, 0.6)
+                # 3. Fallback exponential backoff
+                if sleep_secs is None:
+                    sleep_secs = 2.0 * (2 ** attempt) + random.uniform(0.2, 0.6)
 
-                    sleep_secs = min(sleep_secs, 35.0)
+                sleep_secs = min(sleep_secs, 35.0)
+
+                # If caller enabled multi-model failover, don't sleep 35s — signal failover immediately!
+                if allow_failover:
+                    raise RateLimitFailover(sleep_secs, detail)
+
+                if attempt < max_retries:
                     logger.warning("Rate limited (429). Retrying in %.2fs (attempt %d/%d)...", sleep_secs, attempt + 1, max_retries)
                     time.sleep(sleep_secs)
                     continue
