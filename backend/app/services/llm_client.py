@@ -135,6 +135,9 @@ GROQ_MODEL_POOL = [
 ]
 
 GEMINI_MODEL_POOL = [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
     "gemini-2.0-flash",
     "gemini-1.5-flash",
     "gemini-2.5-flash",
@@ -166,7 +169,7 @@ def _set_groq_cooldown(model: str, seconds: float):
 
 def _get_ordered_gemini_models() -> list[str]:
     raw = settings.llm_model.strip()
-    primary = raw if raw.startswith("gemini") else "gemini-2.0-flash"
+    primary = raw if raw.startswith("gemini") else "gemini-3.8-flash"
     pool = [primary] + [m for m in GEMINI_MODEL_POOL if m != primary]
     now = time.time()
     with _gemini_cooldown_lock:
