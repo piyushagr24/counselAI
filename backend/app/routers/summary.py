@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/contracts", tags=["summary"])
 
 
 @router.get("/{contract_id}/summary", response_model=SummaryResponse)
-async def get_contract_summary(
+def get_contract_summary(
     contract_id: str,
     force: bool = False,
     current_user: dict = Depends(get_current_user),

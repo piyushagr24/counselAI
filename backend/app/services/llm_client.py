@@ -5,6 +5,8 @@ import json
 import logging
 import os
 import random
+import re
+import threading
 import time
 from urllib import error, request
 
@@ -87,7 +89,8 @@ def _generate_groq(system_prompt: str, user_prompt: str, max_tokens: int, api_ke
             {"role": "user", "content": user_prompt},
         ],
     }
-    data = _post_json(url, payload, {"Authorization": f"Bearer {api_key}"})
+    with _groq_semaphore:
+        data = _post_json(url, payload, {"Authorization": f"Bearer {api_key}"})
     try:
         msg = data["choices"][0]["message"]
         content = (msg.get("content") or "").strip()
@@ -115,21 +118,34 @@ def _generate_anthropic(system_prompt: str, user_prompt: str, max_tokens: int) -
 
 
 _last_request_time: float = 0.0
-_MIN_REQUEST_INTERVAL: float = 0.35  # seconds between consecutive API calls to avoid bursting
+_MIN_REQUEST_INTERVAL: float = 0.25  # seconds between consecutive API calls to prevent bursting
+_request_lock = threading.Lock()
+_groq_semaphore = threading.Semaphore(2)  # Cap concurrent Groq requests to 2 to protect 8k TPM limit
+_remaining_tokens: int = 8000
+_token_reset_target: float = 0.0
 
 
 def _pace_request():
-    """Ensure at least _MIN_REQUEST_INTERVAL has elapsed between consecutive calls."""
-    global _last_request_time
-    now = time.time()
-    elapsed = now - _last_request_time
-    if elapsed < _MIN_REQUEST_INTERVAL:
-        time.sleep(_MIN_REQUEST_INTERVAL - elapsed)
-    _last_request_time = time.time()
+    """Ensure at least _MIN_REQUEST_INTERVAL has elapsed and remaining tokens are safe."""
+    global _last_request_time, _remaining_tokens, _token_reset_target
+    with _request_lock:
+        now = time.time()
+        # If Groq reports that remaining tokens in the 1-minute window are low, pause for replenishment
+        if _remaining_tokens < 2000 and now < _token_reset_target:
+            pause_time = min(max(0.05, _token_reset_target - now), 5.0)
+            logger.info("Proactively pacing for Groq token replenishment (remaining: %d, pause: %.2fs)", _remaining_tokens, pause_time)
+            time.sleep(pause_time)
+            now = time.time()
+
+        elapsed = now - _last_request_time
+        if elapsed < _MIN_REQUEST_INTERVAL:
+            time.sleep(_MIN_REQUEST_INTERVAL - elapsed)
+        _last_request_time = time.time()
 
 
 def _post_json(url: str, payload: dict, headers: dict, max_retries: int = 5) -> dict:
     """Post JSON with custom User-Agent, adaptive pacing, and automatic backoff retry on HTTP 429/503."""
+    global _remaining_tokens, _token_reset_target
     _pace_request()
     body = json.dumps(payload).encode("utf-8")
     default_headers = {
@@ -143,6 +159,26 @@ def _post_json(url: str, payload: dict, headers: dict, max_retries: int = 5) -> 
         try:
             with request.urlopen(req, timeout=90) as response:
                 _last_request_time = time.time()
+                resp_headers = getattr(response, "headers", None)
+                if resp_headers and hasattr(resp_headers, "get"):
+                    rem = resp_headers.get("x-ratelimit-remaining-tokens")
+                    rst = resp_headers.get("x-ratelimit-reset-tokens")
+                    if rem is not None:
+                        try:
+                            _remaining_tokens = int(rem)
+                        except (ValueError, TypeError):
+                            pass
+                    if rst is not None:
+                        try:
+                            sec = 0.0
+                            rst_str = str(rst).strip()
+                            if rst_str.endswith("ms"):
+                                sec = float(rst_str[:-2]) / 1000.0
+                            elif rst_str.endswith("s"):
+                                sec = float(rst_str[:-1])
+                            _token_reset_target = time.time() + sec
+                        except Exception:
+                            pass
                 return json.loads(response.read().decode("utf-8"))
         except error.HTTPError as exc:
             try:
@@ -153,13 +189,29 @@ def _post_json(url: str, payload: dict, headers: dict, max_retries: int = 5) -> 
             # Edge Case: Rate Limit (HTTP 429) backoff retry
             if exc.code == 429:
                 if attempt < max_retries:
-                    retry_after = exc.headers.get("Retry-After")
-                    try:
-                        sleep_secs = float(retry_after) if retry_after else (1.5 * (2 ** attempt) + random.uniform(0.1, 0.5))
-                    except ValueError:
-                        sleep_secs = 1.5 * (2 ** attempt) + random.uniform(0.1, 0.5)
-                    sleep_secs = min(sleep_secs, 30.0)
-                    logger.info("Rate limited (429). Retrying in %.2fs (attempt %d/%d)...", sleep_secs, attempt + 1, max_retries)
+                    sleep_secs = None
+                    # 1. Parse Groq's exact duration from error JSON ("Please try again in 9.54s.")
+                    match = re.search(r"try again in ([0-9.]+)\s*s", detail, re.IGNORECASE)
+                    if match:
+                        try:
+                            sleep_secs = float(match.group(1)) + 0.5
+                        except (ValueError, TypeError):
+                            pass
+                    # 2. Check standard Retry-After header
+                    if sleep_secs is None:
+                        headers_obj = getattr(exc, "headers", None)
+                        retry_after = headers_obj.get("Retry-After") if headers_obj and hasattr(headers_obj, "get") else None
+                        if retry_after:
+                            try:
+                                sleep_secs = float(retry_after) + 0.5
+                            except (ValueError, TypeError):
+                                pass
+                    # 3. Fallback exponential backoff
+                    if sleep_secs is None:
+                        sleep_secs = 2.0 * (2 ** attempt) + random.uniform(0.2, 0.6)
+
+                    sleep_secs = min(sleep_secs, 35.0)
+                    logger.warning("Rate limited (429). Retrying in %.2fs (attempt %d/%d)...", sleep_secs, attempt + 1, max_retries)
                     time.sleep(sleep_secs)
                     continue
                 raise LLMError(

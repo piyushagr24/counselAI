@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/contracts", tags=["risks"])
 
 
 @router.get("/{contract_id}/risks", response_model=RiskAnalysisResponse)
-async def get_risks(
+def get_risks(
     contract_id: str,
     force: bool = Query(False, description="Re-run analysis instead of using cached results"),
     current_user: dict = Depends(get_current_user),

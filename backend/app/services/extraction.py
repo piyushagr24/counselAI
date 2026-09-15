@@ -96,8 +96,8 @@ def _format_table_as_markdown(table: Table) -> str:
     return "\n".join(rows_text)
 
 
-def _estimate_docx_pages(path: str, word_count: int) -> int:
-    """Extract page count from DOCX extended properties or estimate from word count/page breaks."""
+def _estimate_docx_pages(path: str, word_count: int, para_count: int = 0) -> int:
+    """Extract page count from DOCX extended properties or estimate from word/para count."""
     pages_from_props = None
     explicit_breaks = 0
     try:
@@ -120,16 +120,19 @@ def _estimate_docx_pages(path: str, word_count: int) -> int:
     except Exception:
         pass
 
-    # Typical commercial/legal contracts average ~350-450 words per printed page
-    est_from_words = max(1, math.ceil(word_count / 400)) if word_count > 0 else 1
+    # Typical commercial/legal contracts average ~200-250 words per printed page
+    # (accounting for 1-inch margins, 1.15-1.5 line spacing, headings, and signature blocks)
+    est_from_words = max(1, math.ceil(word_count / 220)) if word_count > 0 else 1
+    est_from_paras = max(1, math.ceil(para_count / 14)) if para_count > 0 else 1
+    density_est = max(est_from_words, est_from_paras)
 
     if explicit_breaks > 0:
-        return max(explicit_breaks + 1, pages_from_props or 1, est_from_words)
+        return max(explicit_breaks + 1, pages_from_props or 1, density_est)
 
     if pages_from_props is not None and pages_from_props > 1:
-        return max(pages_from_props, est_from_words)
+        return max(pages_from_props, density_est)
 
-    return est_from_words
+    return density_est
 
 
 def extract_docx(path: str) -> dict:
@@ -165,13 +168,32 @@ def extract_docx(path: str) -> dict:
 
             xml = para._p.xml if hasattr(para, "_p") and para._p is not None else ""
             has_break = ('lastRenderedPageBreak' in xml) or ('w:type="page"' in xml)
-            raw_segments.append({
-                "heading": pending_heading,
-                "heading_text": pending_heading_text,
-                "text": text,
-                "has_break": has_break,
-                "words": len(text.split()),
-            })
+
+            # Subdivide paragraphs containing multiple clauses or lines separated by newlines
+            lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+            if len(lines) > 1:
+                for line_idx, line in enumerate(lines):
+                    is_sub_heading = any(line.lower().startswith(pfx) for pfx in [
+                        "clause ", "section ", "article ", "schedule ", "annexure", "now this agreement", "in witness"
+                    ])
+                    cur_heading = (pending_heading if line_idx == 0 else None)
+                    if is_sub_heading and not cur_heading:
+                        cur_heading = "Clause"
+                    raw_segments.append({
+                        "heading": cur_heading,
+                        "heading_text": pending_heading_text if line_idx == 0 else None,
+                        "text": line,
+                        "has_break": has_break if line_idx == 0 else False,
+                        "words": len(line.split()),
+                    })
+            else:
+                raw_segments.append({
+                    "heading": pending_heading,
+                    "heading_text": pending_heading_text,
+                    "text": text,
+                    "has_break": has_break,
+                    "words": len(text.split()),
+                })
             pending_heading = None
             pending_heading_text = None
 
@@ -213,9 +235,9 @@ def extract_docx(path: str) -> dict:
 
     words = full_text.split()
     total_words = len(words)
-    num_pages = _estimate_docx_pages(path, total_words)
+    num_pages = _estimate_docx_pages(path, total_words, para_count=len(raw_segments))
 
-    words_per_page = max(100, math.ceil(total_words / max(1, num_pages)))
+    words_per_page = max(60, math.ceil(total_words / max(1, num_pages)))
     current_page = 1
     cum_words = 0
 
@@ -223,8 +245,9 @@ def extract_docx(path: str) -> dict:
     for idx, s in enumerate(raw_segments, start=1):
         if s.get("has_break") and idx > 1:
             current_page = min(num_pages, current_page + 1)
-        cum_words += s["words"]
-        page_by_words = min(num_pages, max(1, math.ceil(cum_words / words_per_page)))
+
+        mid_words = cum_words + (s["words"] // 2)
+        page_by_words = min(num_pages, max(1, (mid_words // words_per_page) + 1))
         current_page = min(num_pages, max(current_page, page_by_words))
 
         segments.append({
@@ -233,6 +256,7 @@ def extract_docx(path: str) -> dict:
             "heading": s["heading"],
             "text": s["text"],
         })
+        cum_words += s["words"]
 
     metadata = {
         "source_type": "docx",

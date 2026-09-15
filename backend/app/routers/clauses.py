@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api/contracts", tags=["clauses"])
 
 
 @router.get("/{contract_id}/clauses", response_model=ClausesResponse)
-async def get_clauses(
+def get_clauses(
     contract_id: str,
     force: bool = Query(False, description="Re-run classification instead of using cached results"),
     current_user: dict = Depends(get_current_user),

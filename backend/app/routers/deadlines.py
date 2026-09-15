@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/contracts", tags=["deadlines"])
 
 
 @router.get("/{contract_id}/deadlines", response_model=DeadlinesResponse)
-async def get_deadlines(
+def get_deadlines(
     contract_id: str,
     force: bool = Query(False, description="Re-run extraction instead of using cached results"),
     current_user: dict = Depends(get_current_user),

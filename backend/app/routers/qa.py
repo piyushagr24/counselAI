@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/contracts", tags=["qa"])
 
 @router.post("/ask", response_model=AnswerResponse)
 @router.post("/{contract_id}/ask", response_model=AnswerResponse)
-async def ask_question(
+def ask_question(
     payload: QuestionRequest,
     contract_id: str = "general",
     current_user: dict = Depends(get_current_user),

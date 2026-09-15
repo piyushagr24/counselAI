@@ -100,6 +100,7 @@ class Obligation(BaseModel):
     deadline: Optional[str] = None
     section: Optional[str] = None
     page_number: Optional[int] = None
+    excerpt_id: Optional[int] = None
     category: Optional[str] = None
     priority: Optional[Literal["High", "Medium", "Standard"]] = "Standard"
 
@@ -113,6 +114,7 @@ class DateItem(BaseModel):
     description: str
     date_or_timeframe: Optional[str] = None
     page_number: Optional[int] = None
+    excerpt_id: Optional[int] = None
 
 
 class DeadlinesSummary(BaseModel):
@@ -136,6 +138,7 @@ class RiskFinding(BaseModel):
     explanation: str
     evidence: str = ""
     page_number: Optional[int] = None
+    excerpt_id: Optional[int] = None
     section: Optional[str] = None
     recommendation: Optional[str] = None
     category: Optional[str] = None

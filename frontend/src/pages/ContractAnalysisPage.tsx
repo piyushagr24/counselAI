@@ -24,6 +24,7 @@ import {
   CheckCircle2,
   ChevronDown,
   X,
+  MapPin,
 } from "lucide-react";
 import RiskCard from "../components/RiskCard";
 import ClauseCard from "../components/ClauseCard";
@@ -1453,7 +1454,16 @@ function ObligationsView({ obligations }: { obligations: Obligation[] }) {
                 </td>
                 <td className="px-4 py-3 text-xs text-slate-700 leading-snug">{item.obligation}</td>
                 <td className="px-4 py-3 text-slate-600 text-xs">{item.deadline ?? "—"}</td>
-                <td className="px-4 py-3 text-slate-400 text-xs">{item.pageNumber ?? "—"}</td>
+                <td className="px-4 py-3 text-xs whitespace-nowrap">
+                  {item.pageNumber ? (
+                    <span className="inline-flex items-center gap-1 font-medium text-slate-600">
+                      <MapPin size={11} className="text-accent-600" />
+                      Page {item.pageNumber}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

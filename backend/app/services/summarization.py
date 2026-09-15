@@ -4,6 +4,7 @@ hit LLM rate limits. Long contracts are map-reduced with adaptive pacing.
 """
 import json
 import os
+import threading
 import time
 from typing import Any, Dict
 
@@ -86,13 +87,24 @@ def _map_reduce_summarize(full_text: str) -> ContractSummary:
         time.sleep(0.3)  # subtle pacing delay to respect Groq OTPM/RPM window
 
     combined_notes = "\n\n".join(notes) if notes else "No relevant information extracted."
-    raw = generate_answer(REDUCE_SYSTEM_PROMPT, combined_notes, max_tokens=1500)
+    raw = generate_answer(REDUCE_SYSTEM_PROMPT, combined_notes, max_tokens=800)
     return _parse_summary_json(raw)
 
 
 def _single_pass_summarize(full_text: str) -> ContractSummary:
-    raw = generate_answer(REDUCE_SYSTEM_PROMPT, full_text, max_tokens=1500)
+    raw = generate_answer(REDUCE_SYSTEM_PROMPT, full_text, max_tokens=800)
     return _parse_summary_json(raw)
+
+
+_contract_locks: Dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _get_contract_lock(contract_id: str) -> threading.Lock:
+    with _locks_guard:
+        if contract_id not in _contract_locks:
+            _contract_locks[contract_id] = threading.Lock()
+        return _contract_locks[contract_id]
 
 
 def summarize_contract(contract_id: str, force: bool = False) -> Dict[str, Any]:
@@ -104,28 +116,36 @@ def summarize_contract(contract_id: str, force: bool = False) -> Dict[str, Any]:
         except Exception:
             pass  # Recompute if cache is corrupted
 
-    extraction = _load_extraction(contract_id)
-    full_text = extraction.get("full_text", "")
+    with _get_contract_lock(contract_id):
+        if not force and os.path.exists(cache):
+            try:
+                with open(cache, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
 
-    if not full_text.strip():
-        raise HTTPException(status_code=422, detail="Contract has no extracted text to summarize.")
+        extraction = _load_extraction(contract_id)
+        full_text = extraction.get("full_text", "")
 
-    if len(full_text) > MAX_SINGLE_PASS_CHARS:
-        summary, method = _map_reduce_summarize(full_text), "map_reduce"
-    else:
-        summary, method = _single_pass_summarize(full_text), "single_pass"
+        if not full_text.strip():
+            raise HTTPException(status_code=422, detail="Contract has no extracted text to summarize.")
 
-    output = {
-        "contract_id": contract_id,
-        "method": method,
-        "summary": summary.model_dump(),
-    }
+        if len(full_text) > MAX_SINGLE_PASS_CHARS:
+            summary, method = _map_reduce_summarize(full_text), "map_reduce"
+        else:
+            summary, method = _single_pass_summarize(full_text), "single_pass"
 
-    try:
-        with open(cache, "w", encoding="utf-8") as f:
-            json.dump(output, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+        output = {
+            "contract_id": contract_id,
+            "method": method,
+            "summary": summary.model_dump(),
+        }
 
-    return output
+        try:
+            with open(cache, "w", encoding="utf-8") as f:
+                json.dump(output, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+        return output
 
