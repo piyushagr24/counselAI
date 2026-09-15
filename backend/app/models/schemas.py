@@ -72,6 +72,36 @@ class ContractSummary(BaseModel):
     termination_conditions: str = "Not specified in the contract."
     important_clauses: list[str] = []
 
+    @field_validator("overall_risk_score", mode="before")
+    @classmethod
+    def normalize_risk_score(cls, v: Any) -> str:
+        if isinstance(v, str):
+            clean = v.strip().capitalize()
+            if clean in {"Low", "Medium", "High", "Critical"}:
+                return clean
+            lower = v.strip().lower()
+            if "crit" in lower:
+                return "Critical"
+            if "high" in lower:
+                return "High"
+            if "med" in lower or "mod" in lower:
+                return "Medium"
+            if "low" in lower:
+                return "Low"
+        return "Low"
+
+    @field_validator("parties", "key_risks_summary", "key_obligations", "important_clauses", mode="before")
+    @classmethod
+    def ensure_list_of_strings(cls, v: Any) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return [str(item).strip() for item in v if item is not None and str(item).strip()]
+        if isinstance(v, str):
+            parts = [p.strip() for p in v.split(",") if p.strip()]
+            return parts if parts else [v.strip()]
+        return [str(v)]
+
 
 class SummaryResponse(BaseModel):
     contract_id: str

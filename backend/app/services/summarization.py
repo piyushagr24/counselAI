@@ -36,9 +36,9 @@ REDUCE_SYSTEM_PROMPT = (
     "You are a senior corporate counsel and expert contract analysis assistant. "
     "Carefully analyze the contract text/notes provided and synthesize an executive-grade summary. "
     "Base every field strictly on the provided text — never invent facts, names, or provisions. "
-    "Provide a detailed, professional 2-3 paragraph 'executive_summary' describing the commercial purpose, "
-    "core transaction, rights, and potential exposure. Extract explicit dates, financial terms, governing law, "
-    "liabilities, and key obligations. "
+    "Provide a clear, professional 1-2 paragraph 'executive_summary' describing the commercial purpose, "
+    "core transaction, rights, and potential exposure. Keep descriptions concise and factual. "
+    "Extract explicit dates, financial terms, governing law, liabilities, and key obligations. "
     'If a string field is not present in the contract, use "Not specified in the contract." '
     "If a list field has no items, use an empty list []. "
     "Respond with ONLY valid JSON matching this schema (no markdown, no preamble):\n"
@@ -69,11 +69,13 @@ def _load_extraction(contract_id: str) -> Dict[str, Any]:
 def _parse_summary_json(raw: str) -> ContractSummary:
     try:
         parsed = parse_json_loose(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError(f"Expected JSON dictionary for summary, got {type(parsed).__name__}")
         # Ensure contract_purpose fallback if only executive_summary is returned
         if not parsed.get("contract_purpose") and parsed.get("executive_summary"):
-            parsed["contract_purpose"] = parsed["executive_summary"][:300]
+            parsed["contract_purpose"] = str(parsed["executive_summary"])[:300]
         return ContractSummary(**parsed)
-    except (json.JSONDecodeError, ValidationError) as e:
+    except (json.JSONDecodeError, ValidationError, ValueError) as e:
         raise LLMError(f"LLM returned an unexpected format for the summary: {e}")
 
 
@@ -87,12 +89,12 @@ def _map_reduce_summarize(full_text: str) -> ContractSummary:
         time.sleep(0.3)  # subtle pacing delay to respect Groq OTPM/RPM window
 
     combined_notes = "\n\n".join(notes) if notes else "No relevant information extracted."
-    raw = generate_answer(REDUCE_SYSTEM_PROMPT, combined_notes, max_tokens=800)
+    raw = generate_answer(REDUCE_SYSTEM_PROMPT, combined_notes, max_tokens=1100)
     return _parse_summary_json(raw)
 
 
 def _single_pass_summarize(full_text: str) -> ContractSummary:
-    raw = generate_answer(REDUCE_SYSTEM_PROMPT, full_text, max_tokens=800)
+    raw = generate_answer(REDUCE_SYSTEM_PROMPT, full_text, max_tokens=1100)
     return _parse_summary_json(raw)
 
 

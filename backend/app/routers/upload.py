@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 
 from app.core.config import settings
 from app.routers.auth import get_current_user
@@ -20,63 +20,19 @@ from app.models.schemas import (
 )
 from app.services.contract_ingestion import ingest_contract
 from app.services.vector_store import delete_chunks
-from app.services.summarization import summarize_contract
-from app.services.risk_analysis import analyze_risks
-from app.services.obligations import extract_obligations
-from app.services.deadlines import extract_deadlines
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/contracts", tags=["upload"])
 
 
-def _precompute_contract_analyses(contract_id: str):
-    """Sequentially warm up contract analyses in the background with pacing to respect Groq rate limits."""
-    try:
-        time.sleep(1.0)
-        logger.info("Starting background pre-computation for contract %s", contract_id)
-
-        # 1. Executive Summary
-        try:
-            summarize_contract(contract_id)
-            time.sleep(1.2)
-        except Exception as exc:
-            logger.warning("Background summary pre-computation skipped for %s: %s", contract_id, exc)
-
-        # 2. Risk Analysis
-        try:
-            analyze_risks(contract_id)
-            time.sleep(1.2)
-        except Exception as exc:
-            logger.warning("Background risks pre-computation skipped for %s: %s", contract_id, exc)
-
-        # 3. Obligations Extraction
-        try:
-            extract_obligations(contract_id)
-            time.sleep(1.2)
-        except Exception as exc:
-            logger.warning("Background obligations pre-computation skipped for %s: %s", contract_id, exc)
-
-        # 4. Deadlines Extraction
-        try:
-            extract_deadlines(contract_id)
-        except Exception as exc:
-            logger.warning("Background deadlines pre-computation skipped for %s: %s", contract_id, exc)
-
-        logger.info("Completed background pre-computation for contract %s", contract_id)
-    except Exception as exc:
-        logger.error("Background pre-computation pipeline error for %s: %s", contract_id, exc)
-
-
 @router.post("/upload", response_model=UploadResponse)
 async def upload_contract(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
 ) -> UploadResponse:
     try:
         result = ingest_contract(file, user_id=current_user["id"])
-        background_tasks.add_task(_precompute_contract_analyses, result["contract_id"])
     finally:
         await file.close()
     return UploadResponse(**result)

@@ -4,6 +4,95 @@ import json
 from typing import Any
 
 
+def repair_truncated_json(raw: str) -> Any:
+    """Attempt to repair truncated JSON objects or arrays caused by token exhaustion.
+    Backtracks from the end, closes unclosed strings/keys, and terminates all open containers."""
+    text = raw.strip()
+    if not text:
+        return None
+
+    # Find starting brace or bracket
+    start_brace = text.find("{")
+    start_bracket = text.find("[")
+    if start_brace == -1 and start_bracket == -1:
+        return None
+
+    if start_brace != -1 and (start_bracket == -1 or start_brace < start_bracket):
+        start = start_brace
+    else:
+        start = start_bracket
+
+    candidate = text[start:]
+
+    # Try parsing directly with permissive control characters
+    try:
+        return json.loads(candidate, strict=False)
+    except Exception:
+        pass
+
+    # If parsing a truncated array of objects, discard any incomplete trailing element
+    if start_bracket != -1 and (start_brace == -1 or start_bracket < start_brace):
+        last_brace = candidate.rfind("}")
+        if last_brace > 0:
+            candidate_arr = candidate[:last_brace + 1] + "\n]"
+            try:
+                res = json.loads(candidate_arr, strict=False)
+                if isinstance(res, list):
+                    return res
+            except Exception:
+                pass
+
+    # Backtrack up to 2500 characters from end to find last valid structure
+    for cut in range(len(candidate), max(0, len(candidate) - 2500), -1):
+        prefix = candidate[:cut].rstrip()
+        if not prefix:
+            continue
+
+        stack = []
+        in_string = False
+        escape = False
+        for c in prefix:
+            if escape:
+                escape = False
+                continue
+            if c == '\\':
+                if in_string:
+                    escape = True
+                continue
+            if c == '"':
+                in_string = not in_string
+                continue
+            if not in_string:
+                if c in "{[":
+                    stack.append(c)
+                elif c == "}":
+                    if stack and stack[-1] == "{":
+                        stack.pop()
+                elif c == "]":
+                    if stack and stack[-1] == "[":
+                        stack.pop()
+
+        if not stack:
+            continue
+
+        closing = ""
+        if in_string:
+            closing += '"'
+        for opener in reversed(stack):
+            if opener == "{":
+                closing += "}"
+            elif opener == "[":
+                closing += "]"
+
+        test_str = prefix + closing
+        try:
+            return json.loads(test_str, strict=False)
+        except Exception:
+            pass
+
+    return None
+
+
 def parse_json_loose(raw: str) -> Any:
     text = raw.strip().replace("```json", "").replace("```JSON", "").replace("```", "").strip()
     candidates = [text]
@@ -14,13 +103,19 @@ def parse_json_loose(raw: str) -> Any:
     last_error = None
     for candidate in candidates:
         try:
-            return json.loads(candidate)
-        except json.JSONDecodeError as exc:
+            return json.loads(candidate, strict=False)
+        except (json.JSONDecodeError, ValueError) as exc:
             last_error = exc
         try:
             return ast.literal_eval(candidate)
         except (SyntaxError, ValueError) as exc:
             last_error = exc
+
+    # Attempt truncated JSON repair (common when LLMs hit max_tokens)
+    repaired = repair_truncated_json(text)
+    if repaired is not None:
+        return repaired
+
     raise json.JSONDecodeError(str(last_error), text, 0)
 
 
