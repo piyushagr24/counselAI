@@ -136,10 +136,9 @@ GROQ_MODEL_POOL = [
 
 GEMINI_MODEL_POOL = [
     "gemini-3.6-flash",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-2.0-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-flash-latest",
 ]
 
 _model_cooldowns: dict[str, float] = {}
@@ -167,8 +166,15 @@ def _set_groq_cooldown(model: str, seconds: float):
 
 def _get_ordered_gemini_models() -> list[str]:
     raw = settings.llm_model.strip()
-    # Filter out known unstable/high-demand models
-    if raw in {"gemini-3.8-flash", "gemini-3.7-flash", "gemini-1.5-pro", "gemini-2.5-pro"}:
+    # Map deprecated (404) or high-demand models to the live primary model
+    if raw in {
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-2.0-flash-lite",
+    }:
         raw = "gemini-3.6-flash"
     primary = raw if raw.startswith("gemini") else "gemini-3.6-flash"
     pool = [primary] + [m for m in GEMINI_MODEL_POOL if m != primary]
