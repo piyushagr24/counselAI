@@ -135,12 +135,10 @@ GROQ_MODEL_POOL = [
 ]
 
 GEMINI_MODEL_POOL = [
-    "gemini-3.8-flash",
-    "gemini-3.7-flash",
     "gemini-3.6-flash",
+    "gemini-2.5-flash",
     "gemini-2.0-flash",
     "gemini-1.5-flash",
-    "gemini-2.5-flash",
     "gemini-2.0-flash-lite",
 ]
 
@@ -169,7 +167,10 @@ def _set_groq_cooldown(model: str, seconds: float):
 
 def _get_ordered_gemini_models() -> list[str]:
     raw = settings.llm_model.strip()
-    primary = raw if raw.startswith("gemini") else "gemini-3.8-flash"
+    # Filter out known unstable/high-demand models
+    if raw in {"gemini-3.8-flash", "gemini-3.7-flash", "gemini-1.5-pro", "gemini-2.5-pro"}:
+        raw = "gemini-3.6-flash"
+    primary = raw if raw.startswith("gemini") else "gemini-3.6-flash"
     pool = [primary] + [m for m in GEMINI_MODEL_POOL if m != primary]
     now = time.time()
     with _gemini_cooldown_lock:
@@ -358,12 +359,16 @@ def _post_json(url: str, payload: dict, headers: dict, max_retries: int = 5, all
                     "Please wait a moment before sending additional requests."
                 ) from exc
 
-            # Transient Gateway / Overload Errors (502, 503, 504)
-            if exc.code in {502, 503, 504} and attempt < max_retries:
-                sleep_secs = 1.0 * (2 ** attempt) + random.uniform(0.1, 0.4)
-                logger.info("Transient upstream error (%d). Retrying in %.2fs (attempt %d/%d)...", exc.code, sleep_secs, attempt + 1, max_retries)
-                time.sleep(sleep_secs)
-                continue
+            # Transient Gateway / Overload Errors (502, 503, 504 - model high demand / overloaded)
+            if exc.code in {502, 503, 504}:
+                if allow_failover:
+                    # Model is overloaded in free tier — immediately fail over to next model in pool
+                    raise RateLimitFailover(25.0, f"Model overloaded/high demand (HTTP {exc.code}): {detail}")
+                if attempt < max_retries:
+                    sleep_secs = 1.0 * (2 ** attempt) + random.uniform(0.1, 0.4)
+                    logger.info("Transient upstream error (%d). Retrying in %.2fs (attempt %d/%d)...", exc.code, sleep_secs, attempt + 1, max_retries)
+                    time.sleep(sleep_secs)
+                    continue
 
             # Diagnostic guidance for common HTTP errors
             if exc.code == 404:
