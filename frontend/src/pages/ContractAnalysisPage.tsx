@@ -25,6 +25,7 @@ import {
   ChevronDown,
   X,
   MapPin,
+  Square,
 } from "lucide-react";
 import RiskCard from "../components/RiskCard";
 import ClauseCard from "../components/ClauseCard";
@@ -93,6 +94,21 @@ export default function ContractAnalysisPage() {
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const inFlightRef = useRef<Set<Tab>>(new Set());
   const exportMenuRef = useRef<HTMLDivElement>(null);
+  const chatAbortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      chatAbortControllerRef.current?.abort();
+    };
+  }, []);
+
+  const stopChatAnalysis = () => {
+    if (chatAbortControllerRef.current) {
+      chatAbortControllerRef.current.abort();
+      chatAbortControllerRef.current = null;
+    }
+    setChatLoading(false);
+  };
 
   const isTabCached = (t: Tab, details: ContractDetails | null): boolean => {
     if (!details) return false;
@@ -303,6 +319,12 @@ export default function ContractAnalysisPage() {
     if (!question || !id) return;
     setDraft("");
 
+    if (chatAbortControllerRef.current) {
+      chatAbortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    chatAbortControllerRef.current = abortController;
+
     const baseHistory = customHistory !== undefined ? customHistory : messages;
     const newMessages: ChatMessageData[] = [
       ...baseHistory,
@@ -318,7 +340,7 @@ export default function ContractAnalysisPage() {
         content: m.text,
       }));
 
-      const answer = await askQuestion(id, question, historyPayload);
+      const answer = await askQuestion(id, question, historyPayload, abortController.signal);
       setMessages((current) => [
         ...current,
         {
@@ -334,10 +356,24 @@ export default function ContractAnalysisPage() {
           })),
         },
       ]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to answer question.");
+    } catch (err: any) {
+      if (err?.name === "AbortError" || abortController.signal.aborted) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: `${Date.now()}-a`,
+            role: "assistant",
+            text: "*Analysis stopped by user.*",
+          },
+        ]);
+      } else {
+        setError(err instanceof Error ? err.message : "Unable to answer question.");
+      }
     } finally {
       setChatLoading(false);
+      if (chatAbortControllerRef.current === abortController) {
+        chatAbortControllerRef.current = null;
+      }
     }
   };
 
@@ -1178,9 +1214,19 @@ export default function ContractAnalysisPage() {
               ))
             )}
             {chatLoading && (
-              <div className="flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600 animate-pulse w-fit">
-                <Sparkles size={14} className="animate-spin text-accent-600" />
-                <span>Legal AI Copilot is reviewing contract text…</span>
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 shadow-2xs">
+                <div className="flex items-center gap-2 text-xs text-slate-600">
+                  <Sparkles size={14} className="animate-spin text-accent-600" />
+                  <span>Legal AI Copilot is reviewing contract text…</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={stopChatAnalysis}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:border-rose-300 transition-all shadow-2xs active:scale-95 cursor-pointer"
+                >
+                  <Square size={12} className="fill-rose-600 text-rose-600" />
+                  <span>Stop Analysis</span>
+                </button>
               </div>
             )}
             <div ref={chatBottomRef} />
@@ -1191,18 +1237,36 @@ export default function ContractAnalysisPage() {
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void sendQuestion()}
-                placeholder="Ask about clauses, liabilities, deadlines, or risks…"
-                className="w-full bg-transparent text-sm text-ink-900 outline-none placeholder:text-slate-400"
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && !chatLoading && void sendQuestion()}
+                placeholder={
+                  chatLoading
+                    ? "Review in progress… click Stop Analysis to interrupt"
+                    : "Ask about clauses, liabilities, deadlines, or risks…"
+                }
+                className="w-full bg-transparent text-sm text-ink-900 outline-none placeholder:text-slate-400 disabled:opacity-60"
                 disabled={chatLoading}
               />
-              <button
-                onClick={() => void sendQuestion()}
-                disabled={chatLoading || !draft.trim()}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-600 text-white hover:bg-accent-700 disabled:opacity-40 transition-all shadow-xs"
-              >
-                <Send size={14} />
-              </button>
+              {chatLoading ? (
+                <button
+                  type="button"
+                  onClick={stopChatAnalysis}
+                  title="Stop analysis"
+                  className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-700 transition-all shadow-xs active:scale-95 cursor-pointer"
+                >
+                  <Square size={12} className="fill-white" />
+                  <span>Stop Analysis</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void sendQuestion()}
+                  disabled={!draft.trim()}
+                  title="Send question"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-600 text-white hover:bg-accent-700 disabled:opacity-40 transition-all shadow-xs cursor-pointer"
+                >
+                  <Send size={14} />
+                </button>
+              )}
             </div>
             <p className="mt-1.5 text-[11px] text-slate-400 text-center">
               Answers are grounded in contract vectors. Click citation badges to inspect verified text excerpts.

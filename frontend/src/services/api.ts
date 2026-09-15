@@ -91,7 +91,8 @@ export function getDeadlines(contractId: string, force = false): Promise<ApiDead
 export function askQuestion(
   contractId: string,
   question: string,
-  history?: Array<{ role: "user" | "assistant"; content: string }>
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+  signal?: AbortSignal
 ): Promise<ApiAnswerResponse> {
   const isGeneral = !contractId || contractId === "general";
   const path = isGeneral ? "/api/contracts/ask" : `/api/contracts/${encodeURIComponent(contractId)}/ask`;
@@ -99,6 +100,7 @@ export function askQuestion(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, history }),
+    signal,
   });
 }
 

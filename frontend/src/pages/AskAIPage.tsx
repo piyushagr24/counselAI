@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, ChevronDown, Sparkles, Scale, RotateCcw, BookOpen, FileText } from "lucide-react";
+import { Send, ChevronDown, Sparkles, Scale, RotateCcw, BookOpen, FileText, Square } from "lucide-react";
 import ChatMessage from "../components/ChatMessage";
 import DisclaimerBanner from "../components/DisclaimerBanner";
 import { askQuestion, getContracts } from "../services/api";
@@ -38,6 +38,21 @@ export default function AskAIPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
+  const stopAnalysis = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
     void getContracts()
@@ -80,6 +95,12 @@ export default function AskAIPage() {
     if (!question) return;
     setDraft("");
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     const userMessage: ChatMessageData = {
       id: `${Date.now()}-q`,
       role: "user",
@@ -103,7 +124,7 @@ export default function AskAIPage() {
         content: m.text,
       }));
 
-      const answer = await askQuestion(selectedContract, question, historyPayload);
+      const answer = await askQuestion(selectedContract, question, historyPayload, abortController.signal);
       const assistantMessage: ChatMessageData = {
         id: `${Date.now()}-a`,
         role: "assistant",
@@ -121,10 +142,25 @@ export default function AskAIPage() {
         ...prev,
         [selectedContract]: [...(prev[selectedContract] ?? []), assistantMessage],
       }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to answer question.");
+    } catch (err: any) {
+      if (err?.name === "AbortError" || abortController.signal.aborted) {
+        const stoppedMessage: ChatMessageData = {
+          id: `${Date.now()}-a`,
+          role: "assistant",
+          text: "*Analysis stopped by user.*",
+        };
+        setConversations((prev) => ({
+          ...prev,
+          [selectedContract]: [...(prev[selectedContract] ?? []), stoppedMessage],
+        }));
+      } else {
+        setError(err instanceof Error ? err.message : "Unable to answer question.");
+      }
     } finally {
       setLoading(false);
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
     }
   };
 
@@ -248,7 +284,22 @@ export default function AskAIPage() {
                 />
               ))
             )}
-            {loading && <LoadingState label="Legal AI Copilot is thinking…" />}
+            {loading && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 shadow-2xs">
+                <div className="flex items-center gap-2.5 text-xs text-slate-600">
+                  <Sparkles size={15} className="animate-spin text-accent-600" />
+                  <span className="font-medium">Legal AI Copilot is analyzing & reviewing context…</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={stopAnalysis}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:border-rose-300 transition-all shadow-2xs active:scale-95 cursor-pointer"
+                >
+                  <Square size={12} className="fill-rose-600 text-rose-600" />
+                  <span>Stop Analysis</span>
+                </button>
+              </div>
+            )}
             <div ref={chatBottomRef} />
           </div>
 
@@ -257,21 +308,38 @@ export default function AskAIPage() {
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void send()}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && !loading && void send()}
                 placeholder={
-                  isGeneralMode
+                  loading
+                    ? "Analysis in progress… click Stop Analysis to interrupt"
+                    : isGeneralMode
                     ? "Ask any legal question, concept, or drafting advice…"
                     : "Ask about this contract, clauses, or legal concepts…"
                 }
-                className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+                disabled={loading}
+                className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400 disabled:opacity-60"
               />
-              <button
-                onClick={() => void send()}
-                disabled={loading || !draft.trim()}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-600 text-white hover:bg-accent-700 disabled:opacity-40 transition-opacity"
-              >
-                <Send size={15} />
-              </button>
+              {loading ? (
+                <button
+                  type="button"
+                  onClick={stopAnalysis}
+                  title="Stop analysis"
+                  className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-rose-600 px-3.5 text-xs font-semibold text-white hover:bg-rose-700 transition-colors shadow-xs active:scale-95 cursor-pointer"
+                >
+                  <Square size={12} className="fill-white" />
+                  <span>Stop Analysis</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void send()}
+                  disabled={!draft.trim()}
+                  title="Send question"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-600 text-white hover:bg-accent-700 disabled:opacity-40 transition-opacity cursor-pointer"
+                >
+                  <Send size={15} />
+                </button>
+              )}
             </div>
             <p className="mt-2 text-xs text-slate-400">
               {isGeneralMode
