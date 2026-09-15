@@ -129,8 +129,8 @@ class RateLimitFailover(LLMError):
 
 
 GROQ_MODEL_POOL = [
-    "qwen/qwen3.8-27b",
     "groq/compound-mini",
+    "qwen/qwen3.8-27b",
     "groq/compound",
 ]
 
@@ -150,7 +150,7 @@ _gemini_cooldown_lock = threading.Lock()
 
 def _get_ordered_groq_models() -> list[str]:
     raw = settings.llm_model.strip()
-    primary = raw if not raw.startswith("gemini") else "qwen/qwen3.8-27b"
+    primary = raw if (raw and not raw.startswith("gemini")) else "groq/compound-mini"
     pool = [primary] + [m for m in GROQ_MODEL_POOL if m != primary]
     now = time.time()
     with _cooldown_lock:
