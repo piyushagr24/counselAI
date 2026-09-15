@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     gemini_api_key: str = ""
+    google_api_key: str = ""
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     mock_fallback: bool = True
     llm_model: str = "qwen/qwen3.8-27b"
@@ -28,7 +29,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    @field_validator("llm_provider", "llm_model", "groq_api_key", "anthropic_api_key", "openai_api_key", "gemini_api_key", mode="before")
+    @field_validator("llm_provider", "llm_model", "groq_api_key", "anthropic_api_key", "openai_api_key", "gemini_api_key", "google_api_key", mode="before")
     @classmethod
     def strip_whitespace(cls, v: str) -> str:
         return v.strip() if isinstance(v, str) else v

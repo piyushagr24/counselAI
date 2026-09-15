@@ -35,17 +35,67 @@ def _get_groq_key() -> str:
     return ""
 
 
+def _get_gemini_key() -> str:
+    """Resolve Gemini API key with backwards-compatible fallback to GOOGLE_API_KEY and env vars."""
+    if settings.gemini_api_key.strip():
+        return settings.gemini_api_key.strip()
+    if os.environ.get("GEMINI_API_KEY", "").strip():
+        return os.environ.get("GEMINI_API_KEY", "").strip()
+    if getattr(settings, "google_api_key", "").strip():
+        return settings.google_api_key.strip()
+    if os.environ.get("GOOGLE_API_KEY", "").strip():
+        return os.environ.get("GOOGLE_API_KEY", "").strip()
+    if settings.openai_api_key.strip().startswith("AIzaSy"):
+        return settings.openai_api_key.strip()
+    if settings.groq_api_key.strip().startswith("AIzaSy"):
+        return settings.groq_api_key.strip()
+    return ""
+
+
 def generate_answer(system_prompt: str, user_prompt: str, max_tokens: int = 500) -> str:
     provider = settings.llm_provider.lower().strip()
+    groq_key = _get_groq_key()
+    gemini_key = _get_gemini_key()
+
+    # Auto-route to Gemini if Groq is default/configured but only Gemini key is available
+    if provider == "groq" and not groq_key and gemini_key:
+        logger.info("GROQ_API_KEY not set, but GEMINI_API_KEY detected; routing to Gemini.")
+        provider = "gemini"
+
     try:
+        if provider == "gemini":
+            if not gemini_key:
+                if groq_key:
+                    logger.warning("GEMINI_API_KEY is not configured; falling over to Groq.")
+                    return _generate_groq(system_prompt, user_prompt, max_tokens, api_key=groq_key)
+                if settings.mock_fallback:
+                    logger.warning("GEMINI_API_KEY is not configured; using offline mock fallback.")
+                    return _generate_mock(system_prompt, user_prompt)
+                raise LLMError("GEMINI_API_KEY is not set in .env")
+            try:
+                return _generate_gemini(system_prompt, user_prompt, max_tokens, api_key=gemini_key)
+            except Exception as gemini_exc:
+                if groq_key:
+                    logger.warning("All Gemini models failed (%s). Cross-provider failover to Groq...", gemini_exc)
+                    return _generate_groq(system_prompt, user_prompt, max_tokens, api_key=groq_key)
+                raise
+
         if provider == "groq":
-            groq_key = _get_groq_key()
             if not groq_key:
+                if gemini_key:
+                    logger.warning("GROQ_API_KEY is not configured; failing over to Gemini.")
+                    return _generate_gemini(system_prompt, user_prompt, max_tokens, api_key=gemini_key)
                 if settings.mock_fallback:
                     logger.warning("GROQ_API_KEY is not configured; using offline mock fallback.")
                     return _generate_mock(system_prompt, user_prompt)
                 raise LLMError("GROQ_API_KEY is not set in .env")
-            return _generate_groq(system_prompt, user_prompt, max_tokens, api_key=groq_key)
+            try:
+                return _generate_groq(system_prompt, user_prompt, max_tokens, api_key=groq_key)
+            except Exception as groq_exc:
+                if gemini_key:
+                    logger.warning("All Groq models failed (%s). Cross-provider failover to Gemini...", groq_exc)
+                    return _generate_gemini(system_prompt, user_prompt, max_tokens, api_key=gemini_key)
+                raise
 
         if provider == "anthropic":
             if not settings.anthropic_api_key and settings.mock_fallback:
@@ -58,12 +108,6 @@ def generate_answer(system_prompt: str, user_prompt: str, max_tokens: int = 500)
                 logger.warning("OPENAI_API_KEY is not configured; using offline mock fallback.")
                 return _generate_mock(system_prompt, user_prompt)
             return _generate_openai_compatible(system_prompt, user_prompt, max_tokens)
-
-        if provider == "gemini":
-            if not settings.gemini_api_key and settings.mock_fallback:
-                logger.warning("GEMINI_API_KEY is not configured; using offline mock fallback.")
-                return _generate_mock(system_prompt, user_prompt)
-            return _generate_gemini(system_prompt, user_prompt, max_tokens)
 
         if provider in {"mock", "fallback"}:
             return _generate_mock(system_prompt, user_prompt)
@@ -86,17 +130,27 @@ class RateLimitFailover(LLMError):
 
 GROQ_MODEL_POOL = [
     "qwen/qwen3.8-27b",
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
     "groq/compound-mini",
+    "groq/compound",
+]
+
+GEMINI_MODEL_POOL = [
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash-lite",
 ]
 
 _model_cooldowns: dict[str, float] = {}
 _cooldown_lock = threading.Lock()
 
+_gemini_model_cooldowns: dict[str, float] = {}
+_gemini_cooldown_lock = threading.Lock()
+
 
 def _get_ordered_groq_models() -> list[str]:
-    primary = settings.llm_model.strip() or "qwen/qwen3.8-27b"
+    raw = settings.llm_model.strip()
+    primary = raw if not raw.startswith("gemini") else "qwen/qwen3.8-27b"
     pool = [primary] + [m for m in GROQ_MODEL_POOL if m != primary]
     now = time.time()
     with _cooldown_lock:
@@ -108,6 +162,22 @@ def _get_ordered_groq_models() -> list[str]:
 def _set_groq_cooldown(model: str, seconds: float):
     with _cooldown_lock:
         _model_cooldowns[model] = time.time() + seconds
+
+
+def _get_ordered_gemini_models() -> list[str]:
+    raw = settings.llm_model.strip()
+    primary = raw if raw.startswith("gemini") else "gemini-2.0-flash"
+    pool = [primary] + [m for m in GEMINI_MODEL_POOL if m != primary]
+    now = time.time()
+    with _gemini_cooldown_lock:
+        ready = [m for m in pool if _gemini_model_cooldowns.get(m, 0.0) <= now]
+        cooling = [m for m in pool if _gemini_model_cooldowns.get(m, 0.0) > now]
+    return ready + cooling if ready else pool
+
+
+def _set_gemini_cooldown(model: str, seconds: float):
+    with _gemini_cooldown_lock:
+        _gemini_model_cooldowns[model] = time.time() + seconds
 
 
 def _generate_groq(system_prompt: str, user_prompt: str, max_tokens: int, api_key: str) -> str:
@@ -335,22 +405,58 @@ def _generate_openai_compatible(system_prompt: str, user_prompt: str, max_tokens
         raise LLMError("OpenAI-compatible provider returned an unexpected response") from exc
 
 
-def _generate_gemini(system_prompt: str, user_prompt: str, max_tokens: int) -> str:
-    url = f"{settings.gemini_base_url.rstrip('/')}/models/{settings.llm_model.strip()}:generateContent"
-    with _llm_semaphore:
-        data = _post_json(
-            url,
-            {
-                "systemInstruction": {"parts": [{"text": system_prompt}]},
-                "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-                "generationConfig": {"maxOutputTokens": max_tokens},
+def _generate_gemini(system_prompt: str, user_prompt: str, max_tokens: int, api_key: str) -> str:
+    models = _get_ordered_gemini_models()
+    last_exc = None
+
+    for i, model in enumerate(models):
+        is_last = (i == len(models) - 1)
+        url = f"{settings.gemini_base_url.rstrip('/')}/models/{model}:generateContent"
+        payload = {
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+            "generationConfig": {
+                "maxOutputTokens": max_tokens,
+                "temperature": 0.1,
             },
-            {"x-goog-api-key": settings.gemini_api_key},
-        )
-    try:
-        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except (KeyError, IndexError, AttributeError) as exc:
-        raise LLMError("Gemini returned an unexpected response") from exc
+        }
+        with _llm_semaphore:
+            try:
+                data = _post_json(
+                    url,
+                    payload,
+                    {"x-goog-api-key": api_key},
+                    max_retries=2 if not is_last else 3,
+                    allow_failover=not is_last,
+                )
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    raise LLMError(f"Gemini returned no candidates: {data}")
+                parts = candidates[0].get("content", {}).get("parts", [])
+                content = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p).strip()
+                if content:
+                    fence_match = re.search(r"^```(?:json)?\s*\n(.*)\n```$", content, flags=re.DOTALL)
+                    if fence_match:
+                        content = fence_match.group(1).strip()
+                    logger.info("Gemini inference succeeded using model: %s", model)
+                    return content
+            except RateLimitFailover as rlf:
+                _set_gemini_cooldown(model, rlf.sleep_secs)
+                logger.warning(
+                    "Gemini model '%s' rate-limited (cooldown: %.1fs). Instantly failing over to next Gemini model...",
+                    model,
+                    rlf.sleep_secs,
+                )
+                last_exc = rlf
+                continue
+            except Exception as exc:
+                logger.warning("Gemini model '%s' failed (%s). Trying next Gemini model in pool...", model, exc)
+                last_exc = exc
+                continue
+
+    if last_exc:
+        raise last_exc
+    raise LLMError("All Gemini models failed in pool.")
 
 
 def _generate_mock(system_prompt: str, user_prompt: str) -> str:

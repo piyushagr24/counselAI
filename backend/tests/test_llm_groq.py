@@ -107,9 +107,32 @@ def test_mock_fallback_when_key_missing():
         with patch.object(settings, "groq_api_key", ""):
             with patch.object(settings, "openai_api_key", ""):
                 with patch.object(settings, "gemini_api_key", ""):
-                    with patch.object(settings, "mock_fallback", True):
-                        ans = generate_answer("Please summarize", "test contract")
-                        assert "contract_purpose" in ans or "could not find" in ans.lower()
+                    with patch.object(settings, "google_api_key", ""):
+                        with patch.object(settings, "mock_fallback", True):
+                            ans = generate_answer("Please summarize", "test contract")
+                            assert "contract_purpose" in ans or "could not find" in ans.lower()
+
+
+def test_gemini_key_resolution():
+    """Verify Gemini API key auto-discovery from settings, aliases, and env vars."""
+    from app.services.llm_client import _get_gemini_key
+
+    with patch.object(settings, "gemini_api_key", "AIzaSy_direct"):
+        assert _get_gemini_key() == "AIzaSy_direct"
+
+    with patch.object(settings, "gemini_api_key", ""):
+        with patch.object(settings, "google_api_key", "AIzaSy_from_google"):
+            assert _get_gemini_key() == "AIzaSy_from_google"
+
+
+def test_cross_provider_failover():
+    """Verify cross-provider failover when primary provider fails."""
+    with patch.object(settings, "llm_provider", "groq"):
+        with patch.object(settings, "groq_api_key", ""):
+            with patch.object(settings, "gemini_api_key", "AIzaSy_test"):
+                with patch("app.services.llm_client._generate_gemini", return_value="gemini success"):
+                    res = generate_answer("system", "user")
+                    assert res == "gemini success"
 
 
 def test_live_groq_generation():
